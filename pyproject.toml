@@ -1,0 +1,42 @@
+[project]
+name = "intern-recruitment"
+version = "0.1.0"
+description = "乐享 AI 实习生招聘自动化"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "apscheduler>=3.10",
+    "pdfplumber>=0.11",
+    "python-docx>=1.1",
+    "msgraph-sdk>=1.0",
+    "azure-identity>=1.15",
+    "lark-oapi>=1.2",
+    "openai>=1.12",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "python-dotenv>=1.0",
+    "loguru>=0.7",
+    "httpx>=0.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+    "respx>=0.20",
+    "reportlab>=4.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
