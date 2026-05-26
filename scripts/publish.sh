@@ -8,7 +8,7 @@ if [[ -z "$message" ]]; then
   exit 1
 fi
 
-if git diff --quiet && git diff --cached --quiet; then
+if [[ -z "$(git status --porcelain)" ]]; then
   echo "No local code changes to publish."
   exit 0
 fi
