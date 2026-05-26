@@ -1,0 +1,45 @@
+name: Deploy recruiting workbench
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build -- --base /recruiting/
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.LEAI_RECRUITING_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.LEAI_RECRUITING_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync files
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude 'node_modules' \
+            --exclude 'data/recruiting.json' \
+            --exclude 'data/uploads' \
+            --exclude 'data/lark-downloads' \
+            --exclude 'data/outbox' \
+            --exclude 'artifacts' \
+            ./ "${{ secrets.LEAI_RECRUITING_USER }}@${{ secrets.LEAI_RECRUITING_HOST }}:/opt/projects/leai-recruiting/"
+
+      - name: Install and reload PM2
+        run: |
+          ssh "${{ secrets.LEAI_RECRUITING_USER }}@${{ secrets.LEAI_RECRUITING_HOST }}" \
+            'cd /opt/projects/leai-recruiting && npm ci --omit=dev && pm2 startOrReload ecosystem.config.cjs --only leai-recruiting && pm2 save'

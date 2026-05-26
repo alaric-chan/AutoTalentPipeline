@@ -1,0 +1,91 @@
+import 'dotenv/config';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const port = process.env.PORT || 4317;
+const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
+let authHeaders = process.env.APP_AUTH_TOKEN ? { 'X-App-Token': process.env.APP_AUTH_TOKEN } : {};
+const dbPath = path.resolve('data/recruiting.json');
+
+async function isServerAlive() {
+  try {
+    const response = await fetch(`${baseUrl}/api/security/status`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureAuthHeaders() {
+  if (Object.keys(authHeaders).length) return;
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: process.env.SELF_TEST_USERNAME || process.env.INITIAL_ADMIN_USERNAME || 'chenbk1',
+      password: process.env.SELF_TEST_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '123456'
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `login failed: ${response.status}`);
+  }
+  authHeaders = { Authorization: `Bearer ${data.token}` };
+}
+
+function startServer() {
+  const child = spawn('node', ['server/index.js'], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      APP_BASE_URL: baseUrl
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  child.stdout.on('data', (chunk) => process.stdout.write(chunk));
+  child.stderr.on('data', (chunk) => process.stderr.write(chunk));
+  return child;
+}
+
+async function waitForServer() {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 10_000) {
+    if (await isServerAlive()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('server did not become ready in time');
+}
+
+async function main() {
+  let child = null;
+  let dbBackup = null;
+  try {
+    if (process.env.SELF_TEST_RESTORE !== 'false') {
+      dbBackup = await fs.readFile(dbPath, 'utf8').catch(() => null);
+    }
+    if (!(await isServerAlive())) {
+      child = startServer();
+      await waitForServer();
+    }
+    await ensureAuthHeaders();
+    const response = await fetch(`${baseUrl}/api/self-test`, { method: 'POST', headers: authHeaders });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `self-test failed: ${response.status}`);
+    }
+    console.log(JSON.stringify(data, null, 2));
+  } finally {
+    if (dbBackup != null) {
+      await fs.writeFile(dbPath, dbBackup, 'utf8');
+    }
+    if (child) {
+      child.kill('SIGTERM');
+    }
+  }
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});
