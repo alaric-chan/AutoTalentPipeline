@@ -90,6 +90,14 @@ CI/CD 方案已经放在 `.github/workflows/deploy.yml`：本地修改提交到 
 - `LEAI_RECRUITING_USER`
 - `LEAI_RECRUITING_SSH_KEY`
 
+日常可以用一条命令发布到 GitHub，并触发 GitHub Actions 部署：
+
+```bash
+npm run publish -- "说明这次改了什么"
+```
+
+这个命令会先构建，再提交、推送，并在推送前扫描 staged 文件中是否误带常见密钥格式。它不会提交 `.env`、`data/`、`dist/`、`node_modules/`、`artifacts/`。
+
 快速本地联调时，可以启动本地监听同步：
 
 ```bash

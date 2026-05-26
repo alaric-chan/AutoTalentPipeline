@@ -5,6 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,14 +25,35 @@ jobs:
       - run: npm ci
       - run: npm run build -- --base /recruiting/
 
+      - name: Validate deployment secrets
+        env:
+          LEAI_RECRUITING_HOST: ${{ secrets.LEAI_RECRUITING_HOST }}
+          LEAI_RECRUITING_USER: ${{ secrets.LEAI_RECRUITING_USER }}
+          LEAI_RECRUITING_SSH_KEY: ${{ secrets.LEAI_RECRUITING_SSH_KEY }}
+        run: |
+          missing=0
+          for name in LEAI_RECRUITING_HOST LEAI_RECRUITING_USER LEAI_RECRUITING_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error title=Missing GitHub Secret::$name is not configured."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - name: Configure SSH
+        env:
+          LEAI_RECRUITING_HOST: ${{ secrets.LEAI_RECRUITING_HOST }}
+          LEAI_RECRUITING_SSH_KEY: ${{ secrets.LEAI_RECRUITING_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.LEAI_RECRUITING_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "$LEAI_RECRUITING_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.LEAI_RECRUITING_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$LEAI_RECRUITING_HOST" >> ~/.ssh/known_hosts
 
       - name: Sync files
+        env:
+          LEAI_RECRUITING_HOST: ${{ secrets.LEAI_RECRUITING_HOST }}
+          LEAI_RECRUITING_USER: ${{ secrets.LEAI_RECRUITING_USER }}
         run: |
           rsync -az --delete \
             --exclude '.git' \
@@ -37,9 +64,12 @@ jobs:
             --exclude 'data/lark-downloads' \
             --exclude 'data/outbox' \
             --exclude 'artifacts' \
-            ./ "${{ secrets.LEAI_RECRUITING_USER }}@${{ secrets.LEAI_RECRUITING_HOST }}:/opt/projects/leai-recruiting/"
+            ./ "$LEAI_RECRUITING_USER@$LEAI_RECRUITING_HOST:/opt/projects/leai-recruiting/"
 
       - name: Install and reload PM2
+        env:
+          LEAI_RECRUITING_HOST: ${{ secrets.LEAI_RECRUITING_HOST }}
+          LEAI_RECRUITING_USER: ${{ secrets.LEAI_RECRUITING_USER }}
         run: |
-          ssh "${{ secrets.LEAI_RECRUITING_USER }}@${{ secrets.LEAI_RECRUITING_HOST }}" \
+          ssh "$LEAI_RECRUITING_USER@$LEAI_RECRUITING_HOST" \
             'cd /opt/projects/leai-recruiting && npm ci --omit=dev && pm2 startOrReload ecosystem.config.cjs --only leai-recruiting && pm2 save'

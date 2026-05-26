@@ -14,6 +14,7 @@
     "sync:on": "./scripts/sync-on.sh",
     "sync:off": "./scripts/sync-off.sh",
     "sync:status": "./scripts/sync-status.sh",
+    "publish": "./scripts/publish.sh",
     "verify": "npm run build && npm run self-test"
   },
   "dependencies": {
