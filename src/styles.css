@@ -1137,6 +1137,37 @@ pre {
   grid-column: 1 / -1;
 }
 
+.score-slider {
+  background: #f8fafb;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.score-slider > span {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.score-slider strong {
+  background: #17324d;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  min-width: 42px;
+  padding: 3px 8px;
+  text-align: center;
+}
+
+.score-slider input[type="range"] {
+  accent-color: #17324d;
+  border: 0;
+  min-height: 24px;
+  padding: 0;
+}
+
 .toggle {
   align-items: center;
   display: flex !important;
@@ -1227,6 +1258,42 @@ pre {
 
 .record-list p {
   margin: 0;
+}
+
+.record-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.record-scores {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.record-scores span {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+}
+
+.record-scores strong {
+  color: #17324d;
+  font-size: 14px;
+}
+
+.record-note {
+  display: grid;
+  gap: 4px;
+}
+
+.record-note span {
+  color: #52616f;
+  font-weight: 750;
 }
 
 .check-list {

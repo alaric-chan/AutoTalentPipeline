@@ -92,6 +92,71 @@ function Score({ value }) {
   );
 }
 
+function sliderValue(value, fallback = 75) {
+  const score = Number(value);
+  if (Number.isFinite(score)) return Math.min(Math.max(score, 0), 100);
+  return fallback;
+}
+
+function ScoreSlider({ label, value, onChange, wide = false }) {
+  const score = sliderValue(value);
+  return (
+    <label className={`score-slider ${wide ? 'wide' : ''}`}>
+      <span>
+        {label}
+        <strong>{score}</strong>
+      </span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="5"
+        value={score}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function InterviewRecordSummary({ record }) {
+  const scoreItems = [
+    ['面试评分', record.score],
+    ['沟通表达', record.communication],
+    ['AI理解/工具经验', record.aiUnderstanding],
+    ['产品感觉/推进能力', record.productSense]
+  ].filter(([, value]) => value !== '' && value != null);
+  const textItems = [
+    ['优势', record.strengths],
+    ['风险', record.concerns],
+    ['总结与下一步', record.summary || record.nextAction]
+  ].filter(([, value]) => String(value || '').trim());
+
+  if (!scoreItems.length && !textItems.length) {
+    return <p className="muted">暂无文字记录</p>;
+  }
+
+  return (
+    <div className="record-summary">
+      {scoreItems.length ? (
+        <div className="record-scores">
+          {scoreItems.map(([label, value]) => (
+            <span key={label}>
+              {label}
+              <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {textItems.map(([label, value]) => (
+        <div key={label} className="record-note">
+          <span>{label}</span>
+          <p>{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EmptyState({ title, description }) {
   return (
     <div className="empty">
@@ -407,10 +472,10 @@ function defaultRecordDraft(candidate, interviewer = '陈百科') {
     interviewTime: candidate?.interview?.start || toDatetimeLocal(new Date()),
     interviewer,
     decision: '待定',
-    score: '',
-    communication: '',
-    aiUnderstanding: '',
-    productSense: '',
+    score: '75',
+    communication: '75',
+    aiUnderstanding: '75',
+    productSense: '75',
     motivation: '',
     strengths: '',
     concerns: '',
@@ -2062,37 +2127,29 @@ function App() {
                               <option>建议Offer</option>
                             </select>
                           </label>
-                          <label>
-                            面试评分
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={recordDraft.score}
-                              onChange={(event) => setRecordDraft({ ...recordDraft, score: event.target.value })}
-                            />
-                          </label>
-                          <label className="wide">
-                            沟通表达
-                            <input
-                              value={recordDraft.communication}
-                              onChange={(event) => setRecordDraft({ ...recordDraft, communication: event.target.value })}
-                            />
-                          </label>
-                          <label className="wide">
-                            AI理解/工具经验
-                            <input
-                              value={recordDraft.aiUnderstanding}
-                              onChange={(event) => setRecordDraft({ ...recordDraft, aiUnderstanding: event.target.value })}
-                            />
-                          </label>
-                          <label className="wide">
-                            产品感觉/推进能力
-                            <input
-                              value={recordDraft.productSense}
-                              onChange={(event) => setRecordDraft({ ...recordDraft, productSense: event.target.value })}
-                            />
-                          </label>
+                          <ScoreSlider
+                            label="面试评分"
+                            value={recordDraft.score}
+                            onChange={(score) => setRecordDraft({ ...recordDraft, score })}
+                          />
+                          <ScoreSlider
+                            label="沟通表达"
+                            value={recordDraft.communication}
+                            onChange={(communication) => setRecordDraft({ ...recordDraft, communication })}
+                            wide
+                          />
+                          <ScoreSlider
+                            label="AI理解/工具经验"
+                            value={recordDraft.aiUnderstanding}
+                            onChange={(aiUnderstanding) => setRecordDraft({ ...recordDraft, aiUnderstanding })}
+                            wide
+                          />
+                          <ScoreSlider
+                            label="产品感觉/推进能力"
+                            value={recordDraft.productSense}
+                            onChange={(productSense) => setRecordDraft({ ...recordDraft, productSense })}
+                            wide
+                          />
                           <label className="wide">
                             优势
                             <textarea
@@ -2124,7 +2181,7 @@ function App() {
                               <article key={record.id}>
                                 <strong>{record.decision}{record.score == null ? '' : ` / ${record.score}`}</strong>
                                 <span>{record.interviewer || '未填面试官'} · {formatDateTime(record.createdAt)}</span>
-                                <p>{record.summary || record.strengths || '暂无文字记录'}</p>
+                                <InterviewRecordSummary record={record} />
                               </article>
                             ))}
                           </div>
