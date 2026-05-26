@@ -31,4 +31,24 @@ fi
 git commit -m "$message"
 git push
 
-echo "Published to GitHub. GitHub Actions will deploy to the server when deployment secrets are configured."
+echo "Published to GitHub."
+
+remote="$(git remote get-url origin)"
+branch="$(git branch --show-current)"
+repo=""
+if [[ "$remote" =~ github.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
+  repo="${BASH_REMATCH[1]}"
+fi
+
+if [[ -n "$repo" && -n "$branch" ]] && command -v gh >/dev/null 2>&1; then
+  echo "Waiting for GitHub Actions to finish deploying..."
+  sleep 3
+  run_id="$(gh run list -R "$repo" --branch "$branch" --event push --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+  if [[ -n "$run_id" && "$run_id" != "null" ]]; then
+    gh run watch "$run_id" -R "$repo" --exit-status
+  else
+    echo "No push-triggered GitHub Actions run found."
+  fi
+else
+  echo "GitHub Actions watch skipped. Install/login gh to wait for deployment status."
+fi

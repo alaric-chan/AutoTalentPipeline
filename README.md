@@ -96,7 +96,15 @@ CI/CD 方案已经放在 `.github/workflows/deploy.yml`：本地修改提交到 
 npm run publish -- "说明这次改了什么"
 ```
 
-这个命令会先构建，再提交、推送，并在推送前扫描 staged 文件中是否误带常见密钥格式。它不会提交 `.env`、`data/`、`dist/`、`node_modules/`、`artifacts/`。
+这个命令会先构建，再提交、推送，并在推送前扫描 staged 文件中是否误带常见密钥格式。推送后会等待 GitHub Actions 部署完成。它不会提交 `.env`、`data/`、`dist/`、`node_modules/`、`artifacts/`。
+
+这台电脑也安装了通用发布命令，类似项目可以直接在项目目录里运行：
+
+```bash
+codex-publish "说明这次改了什么"
+```
+
+如果项目已经配置好 GitHub Actions 部署，它会复用同样的“本地构建 -> GitHub -> 服务器”流程。
 
 快速本地联调时，可以启动本地监听同步：
 
