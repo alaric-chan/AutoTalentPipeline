@@ -84,27 +84,8 @@ export function buildInterviewEmail({ candidate, interview, template }) {
   };
 }
 
-function offerApplicationField(candidate, names) {
-  const fields = candidate?.application?.fields || {};
-  for (const name of names) {
-    if (fields[name]) return fields[name];
-  }
-  return '';
-}
-
 export function buildOfferEmail({ candidate, offer = {} }) {
   const name = candidate.name || candidate.screening?.candidate_name || '同学';
-  const expectedOnboard =
-    offer.expectedOnboard ||
-    candidate.offer?.expectedOnboard ||
-    candidate.interviewRecord?.expectedOnboard ||
-    offerApplicationField(candidate, ['预计入职时间', '最快到岗时间']) ||
-    '后续沟通确认';
-  const internshipDuration =
-    offer.internshipDuration ||
-    candidate.offer?.internshipDuration ||
-    offerApplicationField(candidate, ['实习时长', '可实习时长']) ||
-    '以后续确认信息为准';
   const contactName = offer.owner || candidate.offer?.owner || config.recruiting.contactName;
   const contactPhone = offer.contactPhone || config.recruiting.contactPhone;
   const subject = `联想${config.recruiting.position}Offer通知-${name}`;
@@ -113,10 +94,8 @@ export function buildOfferEmail({ candidate, offer = {} }) {
 恭喜你通过联想${config.recruiting.position}岗位的面试评估，我们很高兴正式向你发放实习 Offer。
 
 岗位：${config.recruiting.position}
-预计到岗时间：${expectedOnboard}
-实习周期：${internshipDuration}
 
-请回复本邮件确认是否接受 Offer；如到岗时间或实习周期需要调整，也可以在回复中说明。确认后我们会继续同步入职流程和材料清单。
+请回复本邮件确认是否接受 Offer。后续我会再电话联系你，确认到岗时间、实习周期、入职材料等细节。收到确认后，我们会继续同步入职流程和材料清单。
 
 再次欢迎你加入乐享AI团队，期待一起共事。
 

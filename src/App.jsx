@@ -298,7 +298,6 @@ function candidateOfferStatus(candidate) {
     candidate?.offer?.acceptanceStatus ||
     candidate?.interviewRecord?.offerStatus ||
     applicationField(candidate, ['offer情况', 'Offer情况']) ||
-    candidate?.status ||
     '待确认'
   );
 }

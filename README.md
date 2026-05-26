@@ -406,7 +406,7 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/outlo
 
 ### F3. Offer 邮件草稿验证
 
-前端在“Offer/入职”页点击“发送Offer邮件”，应打开 Outlook Web Offer 通知邮件草稿，正文包含恭喜通过面试、正式发放 Offer、预计到岗时间、实习周期和回复确认说明。也可以调用：
+前端在“Offer/入职”页点击“发送Offer邮件”，应打开 Outlook Web Offer 通知邮件草稿，正文包含恭喜通过面试、正式发放 Offer、回复确认说明，以及后续电话确认到岗时间、实习周期和入职材料等细节。也可以调用：
 
 ```bash
 curl -X POST http://localhost:4317/api/candidates/<candidate_id>/offer/outlook-web-mail \
