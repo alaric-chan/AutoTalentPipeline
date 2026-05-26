@@ -3,7 +3,7 @@
 本工具交付一个本地可运行的招聘工作台，覆盖：
 
 - 连接 Outlook 邮箱与日历
-- 按招聘链路拆分：投递采集、简历筛选、面试安排、面试记录、Offer/入职、验证记录
+- 按招聘链路拆分：投递采集、简历筛选、面试安排、面试记录、Offer/入职、操作日志
 - 从 Outlook 邮件附件同步简历
 - 从飞书多维表格表单自动拉取投递记录和简历附件
 - 解析 PDF / DOCX / TXT 简历
@@ -253,9 +253,9 @@ MS_SCOPES=offline_access User.Read Mail.Read Calendars.ReadWrite
 - 允许当前账号创建 Entra 应用注册
 - 由管理员创建应用并提供 `MS_CLIENT_ID` / `MS_CLIENT_SECRET`，授予 `Mail.Read`、`Calendars.ReadWrite`
 
-在 Graph 被企业策略拦截时，平台使用“Outlook日程邀请”打开 Outlook Web/新 Outlook 的日程创建页；用户确认候选人邮箱和 Teams 会议开关后点击发送，Outlook 会给候选人发送会议邀请、生成 Teams 链接，并同步到 Teams 日历。也可用“导出备用面邀包”生成 `.eml` 面邀邮件和 `.ics` 候选人日程邀请文件。
+在 Graph 被企业策略拦截时，平台使用“Outlook日程邀请”打开 Outlook Web/新 Outlook 的日程创建页；用户确认候选人邮箱和 Teams 会议开关后点击发送，Outlook 会给候选人发送会议邀请、生成 Teams 链接，并同步到 Teams 日历。也可用“Outlook发面邀邮件”打开 Outlook Web 邮件草稿，预填候选人邮箱、主题和正文。
 
-如果候选人缺少邮箱，“真实发送”和“Outlook日程邀请”会被拦截，但“导出备用面邀包”仍会生成草稿 `.eml` 和 `.ics`，需要手动补收件人。
+如果候选人缺少邮箱，“真实发送”、“Outlook日程邀请”和“Outlook发面邀邮件”都会被拦截，需要先补充候选人联系邮箱。
 
 ## 每步验证
 
@@ -334,7 +334,7 @@ curl -X POST http://localhost:4317/api/lark/sync \
 
 - 候选人来源为 `lark-base`
 - 简历附件下载到 `data/lark-downloads/`
-- 验证记录出现 `lark-base-sync`
+- 操作日志出现 `lark-base-sync`
 
 Outlook 路径：
 
@@ -386,12 +386,12 @@ curl http://localhost:4317/api/candidates
 - 候选人状态更新为 `面试待确认`
 - 不会真实发送邮件或创建日程
 
-### F2. Outlook Graph 被拦截时的面邀包验证
+### F2. Outlook Graph 被拦截时的 Outlook 草稿验证
 
-前端选择候选人后点击“Outlook日程邀请”，应打开 Outlook Web/新 Outlook 日程创建页，预填标题、候选人邮箱、时间、地点和正文。也可以点击“导出备用面邀包”，或调用：
+前端选择候选人后点击“Outlook日程邀请”，应打开 Outlook Web/新 Outlook 日程创建页，预填标题、候选人邮箱、时间、地点和正文。点击“Outlook发面邀邮件”应打开 Outlook Web 邮件草稿，预填收件人、主题和正文。也可以调用：
 
 ```bash
-curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/export \
+curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/outlook-web-mail \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"start":"2026-06-03T14:30","end":"2026-06-03T15:00","locationOrLink":"Teams 线上会议"}'
@@ -399,12 +399,10 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/expor
 
 预期：
 
-- 在 `data/outbox/` 下生成 `.eml` 面邀邮件
-- 在 `data/outbox/` 下生成 `.ics` 日程邀请
-- 返回 `webCalendarUrl`，可打开 Outlook Web 日程邀请页并发送会议邀请
-- 生成链接只记录为“待发送”；在 Outlook 点击发送后，需要回到平台点击“已在Outlook发送”，验证记录才会标记发送闭环通过
-- 验证记录出现 `outlook-web-calendar`、`outlook-web-calendar-confirm` 或 `interview-artifacts / desktop-fallback`
-- 候选人缺少邮箱时仍可导出草稿包，返回 `missingEmail: true`
+- 返回 `webMailUrl`，可打开 Outlook Web 邮件草稿并发送面邀邮件
+- 生成链接只记录为“待发送”；在 Outlook 日程页点击发送后，需要回到平台点击“已在Outlook发送”，操作日志才会标记日程闭环通过
+- 操作日志出现 `outlook-web-mail`、`outlook-web-calendar` 或 `outlook-web-calendar-confirm`
+- 候选人缺少邮箱时接口会返回错误，需要先补充联系邮箱
 
 ### G. 面试记录验证
 
@@ -416,7 +414,7 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/expor
 - `通过`、`强推`、`建议Offer` 会流转到 `Offer跟进`
 - `备选` 会流转到 `备选`
 - `不通过` 会流转到 `不通过`
-- 验证记录出现 `interview-record`
+- 操作日志出现 `interview-record`
 
 ### H. 真实发送与日程预定验证
 
@@ -453,13 +451,15 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/expor
 | POST | `/api/candidates/:id/screen` | 筛选单个候选人 |
 | POST | `/api/candidates/:id/interview/preview` | 生成面邀与日程预览 |
 | POST | `/api/candidates/:id/interview/schedule` | dry-run 或真实发送面邀并创建日程 |
-| POST | `/api/candidates/:id/interview/export` | 生成 `.eml` 面邀邮件和 `.ics` 日程邀请文件 |
+| POST | `/api/candidates/:id/interview/export` | 兼容旧链路：生成 `.eml` 面邀邮件和 `.ics` 日程邀请文件 |
+| POST | `/api/candidates/:id/interview/outlook-web-mail` | 生成 Outlook Web 邮件草稿链接 |
 | POST | `/api/candidates/:id/interview/outlook-web-calendar` | 生成 Outlook Web 日程邀请链接 |
 | POST | `/api/candidates/:id/interview/confirm-sent` | 人工确认已在 Outlook 发送日程邀请 |
 | POST | `/api/candidates/:id/interview/outlook-desktop-draft` | 备用：打开 Outlook 桌面草稿并返回网页日程链接 |
 | POST | `/api/candidates/:id/interview/record` | 保存平台内面试记录并流转状态 |
+| POST | `/api/candidates/:id/offer` | 保存 Offer 接受情况并写入跟进记录 |
 | POST | `/api/self-test` | 端到端自检 |
-| GET | `/api/verification` | 查看验证记录 |
+| GET | `/api/verification` | 查看操作日志 |
 
 ## 安全说明
 

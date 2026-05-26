@@ -33,6 +33,7 @@ import './styles.css';
 const pageSize = 12;
 const defaultInterviewDurationMinutes = 30;
 const interviewDurationOptions = [15, 30, 45, 60];
+const offerAcceptanceOptions = ['待确认', '考虑中', '已接受', '已拒绝', '放弃', '已入职'];
 const defaultUserDraft = {
   username: '',
   displayName: '',
@@ -205,6 +206,16 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function toDateInput(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (item) => String(item).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function toDatetimeLocal(date) {
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -280,6 +291,29 @@ function candidateEmail(candidate) {
 
 function candidatePhone(candidate) {
   return candidate?.phone || applicationField(candidate, ['联系电话', '手机', '电话']) || candidate?.phoneMasked || '';
+}
+
+function candidateOfferStatus(candidate) {
+  return (
+    candidate?.offer?.acceptanceStatus ||
+    candidate?.interviewRecord?.offerStatus ||
+    applicationField(candidate, ['offer情况', 'Offer情况']) ||
+    candidate?.status ||
+    '待确认'
+  );
+}
+
+function candidateOfferOnboard(candidate) {
+  return (
+    candidate?.offer?.expectedOnboard ||
+    candidate?.interviewRecord?.expectedOnboard ||
+    applicationField(candidate, ['预计入职时间', '最快到岗时间']) ||
+    ''
+  );
+}
+
+function candidateOfferDuration(candidate) {
+  return candidate?.offer?.internshipDuration || applicationField(candidate, ['实习时长', '可实习时长']) || '';
 }
 
 function candidateHasEmail(candidate) {
@@ -391,7 +425,12 @@ function filterCandidatesByStage(candidates, view) {
   }
   if (view === 'onboarding') {
     return candidates.filter((candidate) => {
-      return /offer|入职/i.test(candidate.status || '') || applicationField(candidate, ['offer情况', '预计入职时间']);
+      return (
+        /offer|入职/i.test(candidate.status || '') ||
+        candidate.offer ||
+        candidate.offerRecords?.length ||
+        applicationField(candidate, ['offer情况', '预计入职时间'])
+      );
     });
   }
   return candidates.filter((candidate) => candidate.source !== 'interview-sheet');
@@ -418,9 +457,9 @@ function stageCells(candidate, view) {
   if (view === 'onboarding') {
     return [
       candidate.name || candidateEmail(candidate) || candidate.id,
-      applicationField(candidate, ['offer情况']) || candidate.status || '待确认',
-      applicationField(candidate, ['预计入职时间']) || '待确认',
-      applicationField(candidate, ['实习时长']) || '待确认'
+      candidateOfferStatus(candidate),
+      candidateOfferOnboard(candidate) || '待确认',
+      candidateOfferDuration(candidate) || '待确认'
     ];
   }
   return [
@@ -481,6 +520,19 @@ function defaultRecordDraft(candidate, interviewer = '陈百科') {
     concerns: '',
     summary: '',
     nextAction: ''
+  };
+}
+
+function defaultOfferDraft(candidate) {
+  const offer = candidate?.offer || {};
+  return {
+    acceptanceStatus: offer.acceptanceStatus || candidateOfferStatus(candidate),
+    offerSentAt: toDateInput(offer.offerSentAt),
+    acceptedAt: toDateInput(offer.acceptedAt),
+    expectedOnboard: toDateInput(offer.expectedOnboard || candidateOfferOnboard(candidate)),
+    internshipDuration: offer.internshipDuration || candidateOfferDuration(candidate),
+    note: offer.note || '',
+    owner: offer.owner || '陈百科'
   };
 }
 
@@ -549,6 +601,7 @@ function App() {
   });
   const [timePreset, setTimePreset] = useState('custom');
   const [recordDraft, setRecordDraft] = useState(() => defaultRecordDraft(null));
+  const [offerDraft, setOfferDraft] = useState(() => defaultOfferDraft(null));
   const [preview, setPreview] = useState(null);
   const [deviceCode, setDeviceCode] = useState(null);
   const [larkStatus, setLarkStatus] = useState(null);
@@ -629,7 +682,9 @@ function App() {
     [batchSelection, candidates]
   );
   const screenedCount = candidates.filter((candidate) => candidate.screening).length;
-  const offerCount = candidates.filter((candidate) => /offer|入职/i.test(candidate.status || '')).length;
+  const offerCount = candidates.filter(
+    (candidate) => /offer|入职/i.test(candidate.status || '') || candidate.offer || candidate.offerRecords?.length
+  ).length;
   const pipelineCounts = {
     screening: filterCandidatesByStage(candidates, 'screening').length,
     schedule: filterCandidatesByStage(candidates, 'schedule').length,
@@ -797,6 +852,10 @@ function App() {
   useEffect(() => {
     setRecordDraft(defaultRecordDraft(selected, health?.config?.recruiting?.contactName || '陈百科'));
   }, [health?.config?.recruiting?.contactName, selected?.id]);
+
+  useEffect(() => {
+    setOfferDraft(defaultOfferDraft(selected));
+  }, [selected?.id, selected?.offer?.updatedAt, selected?.offerRecords?.length]);
 
   useEffect(() => {
     api('/api/security/status')
@@ -1121,16 +1180,22 @@ function App() {
     if (result?.payload) setPreview(result.payload);
   }
 
-  async function exportInterviewPack() {
+  async function openOutlookMailInvite() {
     if (!selected) return;
-    const result = await runAction('生成面邀包（未发送）', () =>
-      api(`/api/candidates/${selected.id}/interview/export`, {
+    const mailWindow = openPendingWindow('正在打开 Outlook 邮件草稿');
+    const result = await runAction('打开 Outlook 邮件草稿', () =>
+      api(`/api/candidates/${selected.id}/interview/outlook-web-mail`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(interview)
       })
     );
-    if (result?.payload) setPreview({ ...result.payload, artifacts: result.artifacts });
+    if (result?.payload) {
+      setPreview(result.payload);
+      navigatePendingWindow(mailWindow, result.webMailUrl || result.payload.webMailUrl);
+    } else {
+      mailWindow?.close();
+    }
   }
 
   async function openOutlookCalendarInvite() {
@@ -1158,6 +1223,18 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teamsConfirmation: 'outlook-web' })
+      })
+    );
+    if (result?.id) setSelectedId(result.id);
+  }
+
+  async function saveOfferStatus() {
+    if (!selected) return;
+    const result = await runAction('保存Offer接受情况', () =>
+      api(`/api/candidates/${selected.id}/offer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(offerDraft)
       })
     );
     if (result?.id) setSelectedId(result.id);
@@ -1399,8 +1476,7 @@ function App() {
           <SidebarButton
             active={activeView === 'verification'}
             icon={<ListChecks size={17} />}
-            label="验证记录"
-            meta={String(runs.length)}
+            label="操作日志"
             onClick={() => setActiveView('verification')}
           />
           {isAdmin ? (
@@ -1848,9 +1924,9 @@ function App() {
                             已在Outlook发送
                           </button>
                         ) : null}
-                        <button onClick={exportInterviewPack} disabled={Boolean(busy)}>
-                          <Upload size={16} />
-                          导出备用面邀包
+                        <button onClick={openOutlookMailInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                          <Mail size={16} />
+                          Outlook发面邀邮件
                         </button>
                         {selected.manualReview ? (
                           <button className="ghost-button" onClick={() => reviewSelected('undo')} disabled={Boolean(busy)}>
@@ -1866,10 +1942,16 @@ function App() {
                       </button>
                     ) : null}
                     {activeView === 'onboarding' ? (
-                      <button onClick={exportInterviewPack} disabled={Boolean(busy)}>
-                        <Upload size={16} />
-                        导出入职前面邀包（不发送）
-                      </button>
+                      <>
+                        <button onClick={saveOfferStatus} disabled={Boolean(busy)}>
+                          <CheckCircle2 size={16} />
+                          保存Offer状态
+                        </button>
+                        <button className="ghost-button" onClick={openOutlookMailInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                          <Mail size={16} />
+                          Outlook发面邀邮件
+                        </button>
+                      </>
                     ) : null}
                   </div>
 
@@ -2010,6 +2092,12 @@ function App() {
                               <p className="export-note">
                                 <a href={preview.webCalendarUrl} target="_blank" rel="noreferrer">打开 Outlook 日程邀请页</a>
                                 <span>，确认 Teams 会议开关后点击发送。</span>
+                              </p>
+                            ) : null}
+                            {preview.webMailUrl ? (
+                              <p className="export-note">
+                                <a href={preview.webMailUrl} target="_blank" rel="noreferrer">打开 Outlook 邮件草稿</a>
+                                <span>，确认内容后点击发送。</span>
                               </p>
                             ) : null}
                             {selected.interview?.inviteStatus ? (
@@ -2195,17 +2283,119 @@ function App() {
                   {activeView === 'onboarding' ? (
                     <div className="detail-columns">
                       <section className="panel">
-                        <h3>Offer 与到岗</h3>
-                        <dl className="application-fields compact">
-                          <dt>Offer情况</dt>
-                          <dd>{applicationField(selected, ['offer情况']) || selected.status || '待确认'}</dd>
-                          <dt>预计入职</dt>
-                          <dd>{applicationField(selected, ['预计入职时间']) || '待确认'}</dd>
-                          <dt>实习时长</dt>
-                          <dd>{applicationField(selected, ['实习时长']) || '待确认'}</dd>
-                          <dt>联系电话</dt>
-                          <dd>{candidatePhone(selected) || applicationField(selected, ['联系电话']) || '待补充'}</dd>
-                        </dl>
+                        <h3>Offer 接受情况</h3>
+                        <div className="offer-summary">
+                          <div>
+                            <span>当前状态</span>
+                            <StatusPill value={candidateOfferStatus(selected)} />
+                          </div>
+                          <div>
+                            <span>预计入职</span>
+                            <strong>{candidateOfferOnboard(selected) || '待确认'}</strong>
+                          </div>
+                          <div>
+                            <span>实习时长</span>
+                            <strong>{candidateOfferDuration(selected) || '待确认'}</strong>
+                          </div>
+                          <div>
+                            <span>联系电话</span>
+                            <strong>{candidatePhone(selected) || applicationField(selected, ['联系电话']) || '待补充'}</strong>
+                          </div>
+                        </div>
+                      </section>
+                      <section className="panel">
+                        <h3>记录 Offer 跟进</h3>
+                        <div className="form-grid">
+                          <label>
+                            接受状态
+                            <select
+                              value={offerDraft.acceptanceStatus}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, acceptanceStatus: event.target.value })}
+                            >
+                              {offerAcceptanceOptions.map((option) => (
+                                <option key={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Offer发出日期
+                            <input
+                              type="date"
+                              value={offerDraft.offerSentAt}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, offerSentAt: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            接受日期
+                            <input
+                              type="date"
+                              value={offerDraft.acceptedAt}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, acceptedAt: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            预计入职
+                            <input
+                              type="date"
+                              value={offerDraft.expectedOnboard}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, expectedOnboard: event.target.value })}
+                            />
+                          </label>
+                          <label>
+                            实习时长
+                            <input
+                              value={offerDraft.internshipDuration}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, internshipDuration: event.target.value })}
+                              placeholder="例如 3个月 / 6个月"
+                            />
+                          </label>
+                          <label>
+                            跟进人
+                            <input
+                              value={offerDraft.owner}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, owner: event.target.value })}
+                            />
+                          </label>
+                          <label className="wide">
+                            备注
+                            <textarea
+                              value={offerDraft.note}
+                              onChange={(event) => setOfferDraft({ ...offerDraft, note: event.target.value })}
+                              placeholder="记录候选人反馈、卡点、下一步动作"
+                            />
+                          </label>
+                        </div>
+                      </section>
+                      <section className="panel">
+                        <h3>Offer 跟进记录</h3>
+                        {selected.offerRecords?.length ? (
+                          <div className="record-list">
+                            {selected.offerRecords.map((record) => (
+                              <article key={record.id}>
+                                <strong>{record.acceptanceStatus}</strong>
+                                <span>{record.owner || '未填跟进人'} · {formatDateTime(record.createdAt)}</span>
+                                <dl className="application-fields compact">
+                                  <dt>发出日期</dt>
+                                  <dd>{record.offerSentAt || '未填'}</dd>
+                                  <dt>接受日期</dt>
+                                  <dd>{record.acceptedAt || '未填'}</dd>
+                                  <dt>预计入职</dt>
+                                  <dd>{record.expectedOnboard || '未填'}</dd>
+                                  <dt>实习时长</dt>
+                                  <dd>{record.internshipDuration || '未填'}</dd>
+                                </dl>
+                                {record.note ? (
+                                  <div className="record-note">
+                                    <span>备注</span>
+                                    <p>{record.note}</p>
+                                  </div>
+                                ) : null}
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="muted">暂无 Offer 跟进记录。</p>
+                        )}
                       </section>
                       <section className="panel">
                         <h3>入职材料</h3>
@@ -2448,10 +2638,10 @@ function App() {
 
         {activeView === 'verification' ? (
           <section className="verification standalone">
-            <h2>验证记录</h2>
+            <h2>操作日志</h2>
             <div className="run-list">
               {runs.length === 0 ? (
-                <p className="muted">暂无验证记录。</p>
+                <p className="muted">暂无操作日志。</p>
               ) : (
                 runs.map((run) => (
                   <div key={run.id} className="run-row">

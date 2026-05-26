@@ -113,6 +113,15 @@ export function buildOutlookWebCalendarUrl({ event, interview, email, candidate 
   return `https://outlook.office.com/calendar/deeplink/compose?${params.toString()}`;
 }
 
+export function buildOutlookWebMailUrl({ email, candidate }) {
+  const params = new URLSearchParams({
+    to: candidate?.email || '',
+    subject: email.subject,
+    body: email.bodyText
+  });
+  return `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`;
+}
+
 export function buildCalendarEvent({ candidate, interview, emailBodyHtml }) {
   const name = candidate.name || candidate.screening?.candidate_name || '候选人';
   const transactionId = crypto

@@ -1296,6 +1296,29 @@ pre {
   font-weight: 750;
 }
 
+.offer-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.offer-summary div {
+  background: #f7f9fb;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.offer-summary span {
+  color: #627384;
+  font-size: 13px;
+}
+
+.offer-summary strong {
+  color: #202a33;
+}
+
 .check-list {
   display: grid;
   gap: 8px;

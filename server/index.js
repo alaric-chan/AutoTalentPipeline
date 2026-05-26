@@ -42,6 +42,7 @@ import {
   buildCalendarEvent,
   buildInterviewEmail,
   buildOutlookWebCalendarUrl,
+  buildOutlookWebMailUrl,
   defaultInterviewTemplate,
   normalizeInterviewTemplate
 } from './templates.js';
@@ -337,6 +338,8 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
     viewedAt: safe.viewedAt,
     screening: safe.screening,
     manualReview: safe.manualReview,
+    offer: safe.offer,
+    offerRecords: safe.offerRecords,
     interview: safe.interview,
     interviewRecord: safe.interviewRecord
       ? {
@@ -1040,6 +1043,51 @@ app.post('/api/candidates/:id/interview/outlook-web-calendar', asyncRoute(async 
   res.json({ candidate: stripPrivateCandidate(updated, { detail: true }), payload, webCalendarUrl: payload.webCalendarUrl });
 }));
 
+app.post('/api/candidates/:id/interview/outlook-web-mail', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  if (!candidate.email) {
+    const error = new Error('候选人缺少邮箱，无法打开 Outlook 邮件草稿。');
+    error.status = 400;
+    throw error;
+  }
+  const payload = await interviewPayload(candidate, req.body);
+  const webMailUrl = buildOutlookWebMailUrl({ email: payload.email, candidate });
+  const updated = await patchCandidate(candidate.id, {
+    status: 'Outlook邮件待发送',
+    interview: {
+      ...(candidate.interview || {}),
+      ...payload.interview,
+      webMailUrl,
+      subject: payload.email.subject,
+      emailDraftStatus: 'web-mail-generated',
+      emailDraftGeneratedAt: new Date().toISOString(),
+      actions: [
+        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'outlook-web-mail'),
+        { type: 'outlook-web-mail', status: 'link-generated' }
+      ]
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: new Date().toISOString(),
+        action: '已打开 Outlook 邮件草稿',
+        detail: payload.email.subject
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'outlook-web-mail',
+    status: 'pending',
+    detail: `${updated.name || updated.email || updated.id}：已生成 Outlook 邮件草稿链接，待人工发送`,
+    mode: 'outlook-web-mail-compose'
+  });
+  res.json({
+    candidate: stripPrivateCandidate(updated, { detail: true }),
+    payload: { ...payload, webMailUrl },
+    webMailUrl
+  });
+}));
+
 app.post('/api/candidates/:id/interview/confirm-sent', asyncRoute(async (req, res) => {
   const candidate = requireCandidate(await getCandidate(req.params.id));
   const sentAt = new Date().toISOString();
@@ -1152,6 +1200,62 @@ app.post('/api/candidates/:id/interview/record', asyncRoute(async (req, res) => 
     status: 'passed',
     detail: `${updated.name || updated.email || updated.id}：面试记录 ${record.decision}`,
     mode: record.interviewer || 'manual'
+  });
+  res.json(stripPrivateCandidate(updated, { detail: true }));
+}));
+
+function statusFromOfferAcceptance(value = '') {
+  const text = String(value || '');
+  if (/已入职|入职完成/i.test(text)) return '已入职';
+  if (/拒绝|放弃|不接受/i.test(text)) return 'Offer未接受';
+  if (/待|考虑|沟通/i.test(text)) return 'Offer跟进';
+  if (/接受|确认|同意/i.test(text)) return 'Offer已接受';
+  return 'Offer跟进';
+}
+
+app.post('/api/candidates/:id/offer', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  const createdAt = new Date().toISOString();
+  const record = {
+    id: newId('offer'),
+    createdAt,
+    acceptanceStatus: String(req.body?.acceptanceStatus || '待确认').trim() || '待确认',
+    offerSentAt: req.body?.offerSentAt || '',
+    acceptedAt: req.body?.acceptedAt || '',
+    expectedOnboard: req.body?.expectedOnboard || '',
+    internshipDuration: req.body?.internshipDuration || '',
+    note: req.body?.note || '',
+    owner: req.body?.owner || config.recruiting.contactName
+  };
+  const updated = await patchCandidate(candidate.id, {
+    status: req.body?.nextStatus || statusFromOfferAcceptance(record.acceptanceStatus),
+    offer: {
+      ...(candidate.offer || {}),
+      acceptanceStatus: record.acceptanceStatus,
+      offerSentAt: record.offerSentAt,
+      acceptedAt: record.acceptedAt,
+      expectedOnboard: record.expectedOnboard,
+      internshipDuration: record.internshipDuration,
+      note: record.note,
+      owner: record.owner,
+      updatedAt: createdAt,
+      latestRecordId: record.id
+    },
+    offerRecords: [record, ...(candidate.offerRecords || [])],
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: createdAt,
+        action: '记录 Offer 接受情况',
+        detail: `${record.acceptanceStatus}${record.expectedOnboard ? ` · ${record.expectedOnboard}入职` : ''}`
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'offer-followup',
+    status: 'passed',
+    detail: `${updated.name || updated.email || updated.id}：Offer ${record.acceptanceStatus}`,
+    mode: record.owner || 'manual'
   });
   res.json(stripPrivateCandidate(updated, { detail: true }));
 }));
