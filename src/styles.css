@@ -1473,6 +1473,8 @@ pre {
 }
 
 .pill-Offer跟进,
+.pill-Offer邮件待发送,
+.pill-Offer已接受,
 .pill-已入职 {
   background: #e4f0ff;
   color: #1b4f87;
@@ -1489,6 +1491,7 @@ pre {
   color: #835b00;
 }
 
+.pill-Offer未接受,
 .pill-淘汰,
 .pill-不建议,
 .pill-不推进,

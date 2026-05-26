@@ -253,9 +253,9 @@ MS_SCOPES=offline_access User.Read Mail.Read Calendars.ReadWrite
 - 允许当前账号创建 Entra 应用注册
 - 由管理员创建应用并提供 `MS_CLIENT_ID` / `MS_CLIENT_SECRET`，授予 `Mail.Read`、`Calendars.ReadWrite`
 
-在 Graph 被企业策略拦截时，平台使用“Outlook日程邀请”打开 Outlook Web/新 Outlook 的日程创建页；用户确认候选人邮箱和 Teams 会议开关后点击发送，Outlook 会给候选人发送会议邀请、生成 Teams 链接，并同步到 Teams 日历。也可用“Outlook发面邀邮件”打开 Outlook Web 邮件草稿，预填候选人邮箱、主题和正文。
+在 Graph 被企业策略拦截时，平台使用“Outlook日程邀请”打开 Outlook Web/新 Outlook 的日程创建页；用户确认候选人邮箱和 Teams 会议开关后点击发送，Outlook 会给候选人发送会议邀请、生成 Teams 链接，并同步到 Teams 日历。面试安排页也可用“面邀邮件草稿”打开 Outlook Web 面试邀请邮件草稿。Offer/入职页使用“发送Offer邮件”打开录用通知邮件草稿。
 
-如果候选人缺少邮箱，“真实发送”、“Outlook日程邀请”和“Outlook发面邀邮件”都会被拦截，需要先补充候选人联系邮箱。
+如果候选人缺少邮箱，“真实发送”、“Outlook日程邀请”、“面邀邮件草稿”和“发送Offer邮件”都会被拦截，需要先补充候选人联系邮箱。
 
 ## 每步验证
 
@@ -388,7 +388,7 @@ curl http://localhost:4317/api/candidates
 
 ### F2. Outlook Graph 被拦截时的 Outlook 草稿验证
 
-前端选择候选人后点击“Outlook日程邀请”，应打开 Outlook Web/新 Outlook 日程创建页，预填标题、候选人邮箱、时间、地点和正文。点击“Outlook发面邀邮件”应打开 Outlook Web 邮件草稿，预填收件人、主题和正文。也可以调用：
+前端选择候选人后点击“Outlook日程邀请”，应打开 Outlook Web/新 Outlook 日程创建页，预填标题、候选人邮箱、时间、地点和正文。点击“面邀邮件草稿”应打开 Outlook Web 面试邀请邮件草稿，预填收件人、主题和正文。也可以调用：
 
 ```bash
 curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/outlook-web-mail \
@@ -403,6 +403,23 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/outlo
 - 生成链接只记录为“待发送”；在 Outlook 日程页点击发送后，需要回到平台点击“已在Outlook发送”，操作日志才会标记日程闭环通过
 - 操作日志出现 `outlook-web-mail`、`outlook-web-calendar` 或 `outlook-web-calendar-confirm`
 - 候选人缺少邮箱时接口会返回错误，需要先补充联系邮箱
+
+### F3. Offer 邮件草稿验证
+
+前端在“Offer/入职”页点击“发送Offer邮件”，应打开 Outlook Web Offer 通知邮件草稿，正文包含恭喜通过面试、正式发放 Offer、预计到岗时间、实习周期和回复确认说明。也可以调用：
+
+```bash
+curl -X POST http://localhost:4317/api/candidates/<candidate_id>/offer/outlook-web-mail \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"acceptanceStatus":"待确认","expectedOnboard":"2026-06-01","internshipDuration":"6个月","owner":"陈百科"}'
+```
+
+预期：
+
+- 返回 `webMailUrl`，可打开 Outlook Web Offer 邮件草稿
+- 操作日志出现 `offer-web-mail`
+- 候选人状态更新为 `Offer邮件待发送`
 
 ### G. 面试记录验证
 
@@ -458,6 +475,7 @@ curl -X POST http://localhost:4317/api/candidates/<candidate_id>/interview/outlo
 | POST | `/api/candidates/:id/interview/outlook-desktop-draft` | 备用：打开 Outlook 桌面草稿并返回网页日程链接 |
 | POST | `/api/candidates/:id/interview/record` | 保存平台内面试记录并流转状态 |
 | POST | `/api/candidates/:id/offer` | 保存 Offer 接受情况并写入跟进记录 |
+| POST | `/api/candidates/:id/offer/outlook-web-mail` | 生成 Outlook Web Offer 邮件草稿链接 |
 | POST | `/api/self-test` | 端到端自检 |
 | GET | `/api/verification` | 查看操作日志 |
 

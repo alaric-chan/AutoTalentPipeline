@@ -41,6 +41,7 @@ import {
 import {
   buildCalendarEvent,
   buildInterviewEmail,
+  buildOfferEmail,
   buildOutlookWebCalendarUrl,
   buildOutlookWebMailUrl,
   defaultInterviewTemplate,
@@ -1258,6 +1259,58 @@ app.post('/api/candidates/:id/offer', asyncRoute(async (req, res) => {
     mode: record.owner || 'manual'
   });
   res.json(stripPrivateCandidate(updated, { detail: true }));
+}));
+
+app.post('/api/candidates/:id/offer/outlook-web-mail', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  if (!candidate.email) {
+    const error = new Error('候选人缺少邮箱，无法打开 Offer 邮件草稿。');
+    error.status = 400;
+    throw error;
+  }
+  const createdAt = new Date().toISOString();
+  const offer = {
+    acceptanceStatus: String(req.body?.acceptanceStatus || candidate.offer?.acceptanceStatus || '待确认').trim() || '待确认',
+    offerSentAt: req.body?.offerSentAt || candidate.offer?.offerSentAt || '',
+    acceptedAt: req.body?.acceptedAt || candidate.offer?.acceptedAt || '',
+    expectedOnboard: req.body?.expectedOnboard || candidate.offer?.expectedOnboard || '',
+    internshipDuration: req.body?.internshipDuration || candidate.offer?.internshipDuration || '',
+    note: req.body?.note || candidate.offer?.note || '',
+    owner: req.body?.owner || candidate.offer?.owner || config.recruiting.contactName
+  };
+  const email = buildOfferEmail({ candidate, offer });
+  const webMailUrl = buildOutlookWebMailUrl({ email, candidate });
+  const updated = await patchCandidate(candidate.id, {
+    status: 'Offer邮件待发送',
+    offer: {
+      ...(candidate.offer || {}),
+      ...offer,
+      emailSubject: email.subject,
+      emailDraftStatus: 'web-mail-generated',
+      emailDraftGeneratedAt: createdAt,
+      webMailUrl,
+      updatedAt: createdAt
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: createdAt,
+        action: '已打开 Offer 邮件草稿',
+        detail: email.subject
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'offer-web-mail',
+    status: 'pending',
+    detail: `${updated.name || updated.email || updated.id}：已生成 Offer 邮件草稿链接，待人工发送`,
+    mode: 'outlook-web-mail-compose'
+  });
+  res.json({
+    candidate: stripPrivateCandidate(updated, { detail: true }),
+    payload: { email, webMailUrl },
+    webMailUrl
+  });
 }));
 
 app.post('/api/self-test', asyncRoute(async (req, res) => {

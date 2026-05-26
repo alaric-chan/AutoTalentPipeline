@@ -1198,6 +1198,23 @@ function App() {
     }
   }
 
+  async function openOfferMail() {
+    if (!selected) return;
+    const mailWindow = openPendingWindow('正在打开 Offer 邮件草稿');
+    const result = await runAction('打开Offer邮件草稿', () =>
+      api(`/api/candidates/${selected.id}/offer/outlook-web-mail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(offerDraft)
+      })
+    );
+    if (result?.webMailUrl) {
+      navigatePendingWindow(mailWindow, result.webMailUrl);
+    } else {
+      mailWindow?.close();
+    }
+  }
+
   async function openOutlookCalendarInvite() {
     if (!selected) return;
     const calendarWindow = openPendingWindow('正在打开 Outlook 日程邀请');
@@ -1926,7 +1943,7 @@ function App() {
                         ) : null}
                         <button onClick={openOutlookMailInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
                           <Mail size={16} />
-                          Outlook发面邀邮件
+                          面邀邮件草稿
                         </button>
                         {selected.manualReview ? (
                           <button className="ghost-button" onClick={() => reviewSelected('undo')} disabled={Boolean(busy)}>
@@ -1947,9 +1964,9 @@ function App() {
                           <CheckCircle2 size={16} />
                           保存Offer状态
                         </button>
-                        <button className="ghost-button" onClick={openOutlookMailInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                        <button className="ghost-button" onClick={openOfferMail} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
                           <Mail size={16} />
-                          Outlook发面邀邮件
+                          发送Offer邮件
                         </button>
                       </>
                     ) : null}
