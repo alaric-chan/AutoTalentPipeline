@@ -414,9 +414,13 @@ function buildProfilePatch(candidate, body = {}) {
   const arrival = cleanProfileText(body.arrival, 80);
   const duration = cleanProfileText(body.duration, 80);
   const receivedAt = cleanProfileText(body.receivedAt, 80);
+  const degree = cleanProfileText(body.degree, 80);
+  const schoolBackground = cleanProfileText(body.schoolBackground, 160);
   picked.name = updateField(fields, ['姓名', '名字', '候选人', '应聘者', 'Name'], picked.name || '姓名', name);
   picked.email = updateField(fields, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'], picked.email || '联系邮箱', email);
   picked.phone = updateField(fields, ['联系电话', '手机', '电话', '手机号', '联系方式'], picked.phone || '联系电话', phone);
+  updateField(fields, ['学历', '学位', '最高学历', 'Degree'], '学历', degree);
+  updateField(fields, ['院校背景', '教育背景', '学校背景'], '院校背景', schoolBackground);
   updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', arrival);
   updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', duration);
   updateField(fields, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'], '投递时间', receivedAt);
@@ -426,6 +430,8 @@ function buildProfilePatch(candidate, body = {}) {
     name,
     email,
     phone,
+    degree,
+    school: schoolBackground || candidate.school || '',
     receivedAt,
     application: {
       ...(candidate.application || {}),
@@ -437,6 +443,8 @@ function buildProfilePatch(candidate, body = {}) {
     name,
     email,
     phone,
+    degree,
+    school: schoolBackground || candidate.school || '',
     receivedAt,
     application: nextCandidate.application,
     identityKey: candidateIdentityKey(nextCandidate),
@@ -524,6 +532,8 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
     hasEmail: Boolean(safe.email),
     hasPhone: Boolean(safe.phone),
     school: safe.school,
+    degree: safe.degree,
+    major: safe.major,
     source: safe.source,
     status: safe.status,
     messageSubject: safe.messageSubject,

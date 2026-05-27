@@ -212,6 +212,60 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function parseDisplayDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (/T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) {
+      return {
+        year: String(date.getFullYear()),
+        month: padDatePart(date.getMonth() + 1),
+        day: padDatePart(date.getDate()),
+        hour: padDatePart(date.getHours()),
+        minute: padDatePart(date.getMinutes())
+      };
+    }
+  }
+  const normalized = text.replace(/年|月|\//g, '-').replace(/日/g, '').replace(/\./g, '-');
+  const matched = normalized.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2}))?/);
+  if (matched) {
+    return {
+      year: matched[1],
+      month: padDatePart(matched[2]),
+      day: padDatePart(matched[3]),
+      hour: matched[4] ? padDatePart(matched[4]) : '',
+      minute: matched[5] ? padDatePart(matched[5]) : ''
+    };
+  }
+  const date = new Date(normalized.includes('T') ? normalized : normalized.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    year: String(date.getFullYear()),
+    month: padDatePart(date.getMonth() + 1),
+    day: padDatePart(date.getDate()),
+    hour: padDatePart(date.getHours()),
+    minute: padDatePart(date.getMinutes())
+  };
+}
+
+function formatDateOnly(value) {
+  const date = parseDisplayDate(value);
+  if (!date) return cleanFieldValue(value);
+  return `${date.year}-${date.month}-${date.day}`;
+}
+
+function formatProfileDateTime(value) {
+  const date = parseDisplayDate(value);
+  if (!date) return cleanFieldValue(value);
+  const day = `${date.year}-${date.month}-${date.day}`;
+  return date.hour && date.minute ? `${day} ${date.hour}:${date.minute}` : day;
+}
+
 function dateTimeValue(value) {
   const text = cleanFieldValue(value);
   if (!text) return '';
@@ -374,6 +428,37 @@ function displayContact(candidate) {
   return candidateEmail(candidate) || candidatePhone(candidate) || applicationField(candidate, ['联系电话']) || '待补充';
 }
 
+function uniqueTextValues(values) {
+  const seen = new Set();
+  return values
+    .map(cleanFieldValue)
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function candidateDegree(candidate) {
+  return (
+    candidate?.degree ||
+    applicationField(candidate, ['学历', '学位', '最高学历', 'Degree']) ||
+    candidate?.screening?.degree ||
+    ''
+  );
+}
+
+function candidateSchoolBackground(candidate) {
+  const explicit = applicationField(candidate, ['院校背景', '教育背景', '学校背景']);
+  if (explicit) return explicit;
+  return uniqueTextValues([
+    candidate?.school || applicationField(candidate, ['学校', '院校', '毕业院校', 'School']) || candidate?.screening?.school,
+    candidate?.major || applicationField(candidate, ['专业', 'Major']) || candidate?.screening?.major
+  ]).join(' · ');
+}
+
 function formatFileSize(value) {
   const size = Number(value || 0);
   if (!size) return '';
@@ -495,8 +580,10 @@ function candidateProfileItems(candidate) {
     ['姓名', candidate?.name || candidateEmail(candidate) || candidate?.id],
     ['联系邮箱', candidateEmail(candidate)],
     ['联系电话', candidatePhone(candidate)],
-    ['投递/导入时间', formatDateTime(candidateSubmittedAt(candidate))],
-    ['最快到岗', applicationField(candidate, ['最快到岗时间', '预计入职时间'])],
+    ['学历', candidateDegree(candidate)],
+    ['院校背景', candidateSchoolBackground(candidate)],
+    ['投递/导入时间', formatProfileDateTime(candidateSubmittedAt(candidate))],
+    ['最快到岗', formatDateOnly(applicationField(candidate, ['最快到岗时间', '预计入职时间']))],
     ['可实习时长', applicationField(candidate, ['可实习时长', '实习时长'])],
     ['简历文件', candidate?.resumeFile?.originalName || applicationField(candidate, ['简历', '简历PDF'])],
     ['投递来源', candidate?.source || 'manual']
@@ -677,6 +764,8 @@ function defaultProfileDraft(candidate) {
     name: candidate?.name || '',
     email: editableCandidateEmail(candidate),
     phone: editableCandidatePhone(candidate),
+    degree: candidateDegree(candidate),
+    schoolBackground: candidateSchoolBackground(candidate),
     receivedAt: candidateSubmittedAt(candidate),
     arrival: applicationField(candidate, ['最快到岗时间', '预计入职时间']),
     duration: applicationField(candidate, ['可实习时长', '实习时长'])
@@ -2623,7 +2712,6 @@ function App() {
                     <div className="panel-heading">
                       <div>
                         <h3>投递档案</h3>
-                        <span className="source-text">{selected.application?.picked?.email ? `邮箱字段：${selected.application.picked.email}` : ''}</span>
                       </div>
                       {profileEditing ? null : (
                         <button className="compact-button" onClick={openProfileEditor} disabled={Boolean(busy)}>
@@ -2656,6 +2744,22 @@ function App() {
                             value={profileDraft.phone}
                             onChange={(event) => setProfileDraft({ ...profileDraft, phone: event.target.value })}
                             placeholder="候选人电话"
+                          />
+                        </label>
+                        <label>
+                          学历
+                          <input
+                            value={profileDraft.degree}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, degree: event.target.value })}
+                            placeholder="例如 硕士"
+                          />
+                        </label>
+                        <label>
+                          院校背景
+                          <input
+                            value={profileDraft.schoolBackground}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, schoolBackground: event.target.value })}
+                            placeholder="例如 西安交通大学 · 社会学"
                           />
                         </label>
                         <label>
