@@ -518,6 +518,7 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
     id: safe.id,
     identityKey: safe.identityKey,
     name: safe.name,
+    phone: safe.phone,
     emailMasked: maskEmail(safe.email),
     phoneMasked: maskPhone(safe.phone),
     hasEmail: Boolean(safe.email),

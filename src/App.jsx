@@ -180,7 +180,7 @@ const stageMeta = {
   screening: {
     title: '简历筛选',
     description: '按 AI 分数、推荐结论和风险备注筛选候选人',
-    columns: ['姓名', '投递', '来源', 'AI分', '推荐']
+    columns: ['姓名', '电话', 'AI分', '推荐']
   },
   schedule: {
     title: '面试安排',
@@ -520,8 +520,7 @@ function stageCells(candidate, view) {
   }
   return [
     candidate.name || candidateEmail(candidate) || candidate.id,
-    formatDateTime(candidateSubmittedAt(candidate)),
-    candidate.source || 'manual',
+    candidatePhone(candidate) || displayContact(candidate),
     candidate.screening?.score ?? '待筛',
     candidate.screening?.recommendation || candidate.status || '待筛选'
   ];
@@ -1905,7 +1904,7 @@ function App() {
                   <input
                     value={candidateQuery}
                     onChange={(event) => setCandidateQuery(event.target.value)}
-                    placeholder="搜索姓名、状态、来源"
+                    placeholder="搜索姓名、电话、状态"
                   />
                 </label>
                 <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
