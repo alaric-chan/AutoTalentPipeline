@@ -402,16 +402,91 @@ function listFromValue(value) {
     .filter(Boolean);
 }
 
-function splitEvidenceText(value) {
-  const text = cleanFieldValue(value).replace(/\r\n?/g, '\n');
-  const normalized = text
-    .replace(/([；;。.!?？])\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/g, '$1\n$2')
-    .replace(/^\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/gm, '$1');
-  return normalized
-    .split(/\n+|[；;]/)
-    .map((item) => item.replace(/^\d+[.、)）]\s*/, '').trim())
-    .map((item) => item.replace(/^[一二三四五六七八九十]+[.、)）]\s*/, '').trim())
+function normalizeRiskNotesMarkdown(value) {
+  const text = cleanFieldValue(value).replace(/\r\n?/g, '\n').trim();
+  if (!text) return '';
+  const listMarker = '(?:\\d{1,2}|[一二三四五六七八九十]+)[.、)）]\\s*';
+  const bulletMarker = '[-*+]\\s+';
+  const merged = text.replace(new RegExp(`\\n(?!\\s*(?:${listMarker}|${bulletMarker}))`, 'g'), ' ');
+  const normalized = merged
+    .replace(/([；;。！？?])\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/g, '$1\n$2')
+    .replace(/([；;。！？?])\s*([-*+]\s+)/g, '$1\n$2');
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
     .filter(Boolean);
+  const hasMarkdownList = lines.some((line) => /^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s+/.test(line) || /^[-*+]\s+/.test(line));
+  const sourceLines = hasMarkdownList ? lines : normalized.split(/[；;]/).map((line) => line.trim()).filter(Boolean);
+  return sourceLines
+    .map((line, index) => {
+      const cleanLine = line.replace(/[；;]\s*$/, '').trim();
+      const ordered = cleanLine.match(/^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*(.+)$/);
+      if (ordered) return `${index + 1}. ${ordered[2].trim()}`;
+      const bullet = cleanLine.match(/^[-*+]\s+(.+)$/);
+      if (bullet) return `- ${bullet[1].trim()}`;
+      return hasMarkdownList ? cleanLine : `- ${cleanLine}`;
+    })
+    .join('\n');
+}
+
+function renderMarkdownInline(text) {
+  const nodes = [];
+  const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    if (match[2]) {
+      nodes.push(<strong key={`strong-${match.index}`}>{match[2]}</strong>);
+    } else if (match[3]) {
+      nodes.push(<code key={`code-${match.index}`}>{match[3]}</code>);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
+}
+
+function MarkdownContent({ value }) {
+  const lines = String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const blocks = [];
+  let listType = '';
+  let listItems = [];
+
+  function flushList() {
+    if (!listType) return;
+    const Tag = listType;
+    blocks.push(
+      <Tag key={`list-${blocks.length}`} className="markdown-list">
+        {listItems.map((item, index) => (
+          <li key={`${item}-${index}`}>{renderMarkdownInline(item)}</li>
+        ))}
+      </Tag>
+    );
+    listType = '';
+    listItems = [];
+  }
+
+  lines.forEach((line) => {
+    const ordered = line.match(/^\d{1,2}[.)]\s+(.+)$/);
+    const unordered = line.match(/^[-*+]\s+(.+)$/);
+    if (ordered || unordered) {
+      const nextType = ordered ? 'ol' : 'ul';
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push((ordered?.[1] || unordered?.[1] || '').trim());
+      return;
+    }
+    flushList();
+    blocks.push(<p key={`p-${blocks.length}`}>{renderMarkdownInline(line)}</p>);
+  });
+  flushList();
+
+  return <div className="markdown-content">{blocks}</div>;
 }
 
 function candidateProfileItems(candidate) {
@@ -2145,11 +2220,7 @@ function App() {
                           <AlertTriangle size={17} />
                         </div>
                         {selected.screening?.risk_notes ? (
-                          <ol className="risk-list">
-                            {splitEvidenceText(selected.screening.risk_notes).map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ol>
+                          <MarkdownContent value={normalizeRiskNotesMarkdown(selected.screening.risk_notes)} />
                         ) : (
                           <p className="muted">暂无风险备注。</p>
                         )}
