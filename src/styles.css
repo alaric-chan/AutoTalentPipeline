@@ -736,7 +736,7 @@ pre {
   display: grid;
   font-size: 13px;
   gap: 8px;
-  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-columns: var(--stage-columns, repeat(var(--cols), minmax(0, 1fr)));
   min-height: 46px;
   padding: 8px 10px;
   text-align: left;
@@ -763,7 +763,18 @@ pre {
 .name-cell {
   align-items: center;
   display: inline-flex;
-  gap: 6px;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.candidate-name-text {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
 .row-check {
@@ -806,6 +817,13 @@ pre {
   line-height: 1;
   padding: 3px 6px;
   text-transform: uppercase;
+}
+
+.new-badge-compact {
+  border-radius: 5px;
+  font-size: 10px;
+  min-width: 16px;
+  padding: 2px 4px;
 }
 
 .stage-header {

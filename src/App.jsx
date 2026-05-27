@@ -84,8 +84,8 @@ function StatusPill({ value }) {
   return <span className={`pill pill-${key}`}>{key}</span>;
 }
 
-function NewBadge() {
-  return <span className="new-badge">New</span>;
+function NewBadge({ compact = false }) {
+  return <span className={`new-badge ${compact ? 'new-badge-compact' : ''}`}>{compact ? '新' : 'New'}</span>;
 }
 
 function Score({ value }) {
@@ -179,7 +179,8 @@ const stageMeta = {
   screening: {
     title: '简历筛选',
     description: '按 AI 分数、推荐结论和风险备注筛选候选人',
-    columns: ['姓名', '电话', 'AI分', '推荐']
+    columns: ['姓名', '电话', 'AI分', '推荐'],
+    columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(54px, 0.68fr)'
   },
   schedule: {
     title: '面试安排',
@@ -1992,7 +1993,13 @@ function App() {
                   <EmptyState title="没有匹配候选人" description="调整搜索或状态筛选" />
                 ) : (
                   <div className="stage-table">
-                    <div className="stage-row stage-header" style={{ '--cols': stageMeta[activeView].columns.length }}>
+                    <div
+                      className="stage-row stage-header"
+                      style={{
+                        '--cols': stageMeta[activeView].columns.length,
+                        '--stage-columns': stageMeta[activeView].columnTemplate || `repeat(${stageMeta[activeView].columns.length}, minmax(0, 1fr))`
+                      }}
+                    >
                       {stageMeta[activeView].columns.map((column) => (
                         <span key={column}>{column}</span>
                       ))}
@@ -2001,7 +2008,10 @@ function App() {
                       <div
                         key={candidate.id}
                         className={`stage-row ${selected?.id === candidate.id ? 'active' : ''}`}
-                        style={{ '--cols': stageMeta[activeView].columns.length }}
+                        style={{
+                          '--cols': stageMeta[activeView].columns.length,
+                          '--stage-columns': stageMeta[activeView].columnTemplate || `repeat(${stageMeta[activeView].columns.length}, minmax(0, 1fr))`
+                        }}
                         role="button"
                         tabIndex={0}
                         onClick={() => selectCandidate(candidate)}
@@ -2023,14 +2033,14 @@ function App() {
                                   onChange={(event) => toggleBatchCandidate(candidate.id, event.target.checked)}
                                 />
                                 <strong className="name-cell">
-                                  {candidate.isNew ? <NewBadge /> : null}
-                                  {cell}
+                                  {candidate.isNew ? <NewBadge compact /> : null}
+                                  <span className="candidate-name-text">{cell}</span>
                                 </strong>
                               </label>
                             ) : index === 0 ? (
                               <strong className="name-cell">
-                                {candidate.isNew ? <NewBadge /> : null}
-                                {cell}
+                                {candidate.isNew ? <NewBadge compact /> : null}
+                                <span className="candidate-name-text">{cell}</span>
                               </strong>
                             ) : (
                               cell
