@@ -571,10 +571,7 @@ pre {
 }
 
 .pane-title {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
+  display: block;
 }
 
 .pane-title > div {
@@ -583,18 +580,47 @@ pre {
 
 .pane-title-main {
   display: grid;
-  gap: 2px;
+  gap: 6px;
+  width: 100%;
 }
 
 .pane-heading-row {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pane-heading-row h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.candidate-count {
+  color: #627384;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pane-action-row {
+  display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
 }
 
-.pane-heading-row .compact-button {
+.pane-action-row .compact-button {
+  flex: 1 1 0;
+  justify-content: center;
   margin-bottom: 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.pane-description {
+  display: block;
+  line-height: 1.35;
 }
 
 .pane-title h2,

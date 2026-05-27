@@ -2140,32 +2140,32 @@ function App() {
                 <div className="pane-title-main">
                   <div className="pane-heading-row">
                     <h2>{stageMeta[activeView].title}</h2>
-                    {activeView === 'screening' ? (
-                      <>
-                        <button
-                          className="compact-button"
-                          onClick={syncLark}
-                          disabled={Boolean(busy) || !larkCanSync}
-                          title="立即同步飞书表单投递"
-                        >
-                          <Inbox size={15} />
-                          同步表单投递
-                        </button>
-                        <button
-                          className="compact-button"
-                          onClick={rescreenCurrentList}
-                          disabled={Boolean(busy) || !filteredCandidates.length}
-                          title="按当前搜索和状态筛选结果批量重跑AI评分"
-                        >
-                          <FileSearch size={15} />
-                          重跑当前列表
-                        </button>
-                      </>
-                    ) : null}
+                    <small className="candidate-count">{filteredCandidates.length}/{stageCandidates.length}</small>
                   </div>
-                  <small>{stageMeta[activeView].description}</small>
+                  {activeView === 'screening' ? (
+                    <div className="pane-action-row">
+                      <button
+                        className="compact-button"
+                        onClick={syncLark}
+                        disabled={Boolean(busy) || !larkCanSync}
+                        title="立即同步飞书表单投递"
+                      >
+                        <Inbox size={15} />
+                        同步表单投递
+                      </button>
+                      <button
+                        className="compact-button"
+                        onClick={rescreenCurrentList}
+                        disabled={Boolean(busy) || !filteredCandidates.length}
+                        title="按当前搜索和状态筛选结果批量重跑AI评分"
+                      >
+                        <FileSearch size={15} />
+                        AI批量评估
+                      </button>
+                    </div>
+                  ) : null}
+                  <small className="pane-description">{stageMeta[activeView].description}</small>
                 </div>
-                <small>{filteredCandidates.length} / {stageCandidates.length}</small>
               </div>
               <div className="candidate-tools">
                 <label className="search-box">
