@@ -266,6 +266,59 @@ function formatProfileDateTime(value) {
   return date.hour && date.minute ? `${day} ${date.hour}:${date.minute}` : day;
 }
 
+function endOfMonth(year, month) {
+  return new Date(Number(year), Number(month), 0).getDate();
+}
+
+function parseResumeDateToken(value, fallbackYear = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const normalized = text
+    .replace(/年/g, '-')
+    .replace(/月份|月/g, '-')
+    .replace(/日/g, '')
+    .replace(/[./]/g, '-')
+    .replace(/-+$/g, '');
+  const matched = normalized.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/) || normalized.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+  if (!matched) return null;
+  const year = matched[1].length === 4 ? matched[1] : fallbackYear;
+  const month = matched[1].length === 4 ? matched[2] : matched[1];
+  const day = matched[1].length === 4 ? matched[3] : matched[2];
+  if (!year || !month) return null;
+  const normalizedMonth = Number(month);
+  if (normalizedMonth < 1 || normalizedMonth > 12) return null;
+  const normalizedDay = day ? Number(day) : endOfMonth(year, normalizedMonth);
+  const date = new Date(Number(year), normalizedMonth - 1, normalizedDay);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function riskRangeEndsInFuture(rangeText) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const normalized = String(rangeText || '').replace(/\s+/g, '');
+  const tokens = normalized.match(/(?:19|20)\d{2}[年./-]\d{1,2}(?:(?:[月./-]\d{1,2}日?)|月份|月)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  const start = parseResumeDateToken(tokens[0]);
+  const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
+  const end = parseResumeDateToken(tokens.at(-1), startYear) || start;
+  if (!end) return true;
+  return end.getTime() > today.getTime();
+}
+
+function normalizeFutureRiskLabels(value) {
+  const text = cleanFieldValue(value);
+  if (!text || !text.includes('未来时间')) return text;
+  const dateToken = '(?:19|20)\\d{2}[年./-]\\d{1,2}(?:(?:[月./-]\\d{1,2}日?)|月份|月)?';
+  const shortToken = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
+  const dateRange = `${dateToken}(?:\\s*[-—–~至到]\\s*(?:${dateToken}|${shortToken}))?`;
+  return text
+    .replace(new RegExp(`(${dateRange})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
+      if (riskRangeEndsInFuture(range)) return match;
+      return `${range}${middle}`;
+    })
+    .replace(/（\s*）|\(\s*\)/g, '')
+    .replace(/\s+([，,。；;])/g, '$1');
+}
+
 function dateTimeValue(value) {
   const text = cleanFieldValue(value);
   if (!text) return '';
@@ -489,7 +542,7 @@ function listFromValue(value) {
 }
 
 function normalizeRiskNotesMarkdown(value) {
-  const text = cleanFieldValue(value).replace(/\r\n?/g, '\n').trim();
+  const text = normalizeFutureRiskLabels(value).replace(/\r\n?/g, '\n').trim();
   if (!text) return '';
   const listMarker = '(?:\\d{1,2}|[一二三四五六七八九十]+)[.、)）]\\s*';
   const bulletMarker = '[-*+]\\s+';

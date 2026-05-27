@@ -56,6 +56,7 @@ import {
   pullLarkCandidates
 } from './larkBaseService.js';
 import { pullInterviewSheetCandidates } from './interviewSheetService.js';
+import { normalizeScreeningForDisplay } from './screening.js';
 
 await fs.mkdir(paths.uploads, { recursive: true });
 await fs.mkdir(paths.larkDownloads, { recursive: true });
@@ -507,6 +508,7 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
   const safe = JSON.parse(JSON.stringify(candidate));
   if (safe.lark?.baseToken) delete safe.lark.baseToken;
   if (safe.resumeFile?.path) delete safe.resumeFile.path;
+  safe.screening = normalizeScreeningForDisplay(safe.screening);
   if (safe.interview?.artifacts) {
     safe.interview.artifacts = {
       ...safe.interview.artifacts,

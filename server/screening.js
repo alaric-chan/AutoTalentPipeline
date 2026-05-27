@@ -54,6 +54,86 @@ function normalizeText(value) {
   return String(value);
 }
 
+function currentRecruitingDateInfo(now = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+      .formatToParts(now)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+  return {
+    timeZone: 'Asia/Shanghai',
+    date: `${parts.year}-${parts.month}-${parts.day}`
+  };
+}
+
+function endOfMonth(year, month) {
+  return new Date(Number(year), Number(month), 0).getDate();
+}
+
+function parseResumeDateToken(value, fallbackYear = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const normalized = text
+    .replace(/年/g, '-')
+    .replace(/月份|月/g, '-')
+    .replace(/日/g, '')
+    .replace(/[./]/g, '-')
+    .replace(/-+$/g, '');
+  const matched = normalized.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/) || normalized.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+  if (!matched) return null;
+  const year = matched[1].length === 4 ? matched[1] : fallbackYear;
+  const month = matched[1].length === 4 ? matched[2] : matched[1];
+  const day = matched[1].length === 4 ? matched[3] : matched[2];
+  if (!year || !month) return null;
+  const normalizedMonth = Number(month);
+  if (normalizedMonth < 1 || normalizedMonth > 12) return null;
+  const normalizedDay = day ? Number(day) : endOfMonth(year, normalizedMonth);
+  const date = new Date(Number(year), normalizedMonth - 1, normalizedDay);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function rangeEndsInFuture(rangeText, todayText = currentRecruitingDateInfo().date) {
+  const today = parseResumeDateToken(todayText);
+  if (!today) return true;
+  const normalized = String(rangeText || '').replace(/\s+/g, '');
+  const tokens = normalized.match(/(?:19|20)\d{2}[年./-]\d{1,2}(?:(?:[月./-]\d{1,2}日?)|月份|月)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  const start = parseResumeDateToken(tokens[0]);
+  const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
+  const end = parseResumeDateToken(tokens.at(-1), startYear) || start;
+  if (!end) return true;
+  return end.getTime() > today.getTime();
+}
+
+export function normalizeScreeningRiskNotes(value, todayText = currentRecruitingDateInfo().date) {
+  const text = normalizeText(value);
+  if (!text || !text.includes('未来时间')) return text;
+  const dateToken = '(?:19|20)\\d{2}[年./-]\\d{1,2}(?:(?:[月./-]\\d{1,2}日?)|月份|月)?';
+  const shortToken = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
+  const dateRange = `${dateToken}(?:\\s*[-—–~至到]\\s*(?:${dateToken}|${shortToken}))?`;
+  return text
+    .replace(new RegExp(`(${dateRange})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
+      if (rangeEndsInFuture(range, todayText)) return match;
+      return `${range}${middle}`;
+    })
+    .replace(/（\s*）|\(\s*\)/g, '')
+    .replace(/\s+([，,。；;])/g, '$1');
+}
+
+export function normalizeScreeningForDisplay(screening) {
+  if (!screening) return screening;
+  return {
+    ...screening,
+    risk_notes: normalizeScreeningRiskNotes(screening.risk_notes)
+  };
+}
+
 function availableMonths(text) {
   const explicit = text.match(/([3-9]|1[0-2])\s*(个月|月)/);
   if (explicit) return Number(explicit[1]);
@@ -146,9 +226,11 @@ export async function screenResume({ resumeText, candidate = {} }) {
   const safeResumeText = redactSensitiveText(resumeText);
   const safeCandidate = sanitizeCandidateForModel(candidate);
   const fallback = heuristicScreenResume({ resumeText: safeResumeText, candidate: safeCandidate });
+  const currentDateInfo = currentRecruitingDateInfo();
   if (!config.bailian.apiKey) {
     return {
       ...fallback,
+      risk_notes: normalizeScreeningRiskNotes(fallback.risk_notes, currentDateInfo.date),
       source: 'heuristic',
       privacy: { pii_redacted_before_model: true },
       warning: '未配置 BAILIAN_API_KEY，已使用本地启发式评分。'
@@ -167,6 +249,12 @@ ${config.recruiting.jd}
 - 数据处理与评测经验 15%
 - 实习稳定性 15%
 - 表达与简历质量 5%
+
+当前日期上下文：
+- 今天是 ${currentDateInfo.date}，时区为 ${currentDateInfo.timeZone}。
+- 你不能联网获取实时日期，所有“当前/未来/过去”的判断必须只以这个日期为准。
+- 只有晚于 ${currentDateInfo.date} 的日期或日期区间结束时间，才可以在 risk_notes 中称为“未来时间”。
+- 早于或等于 ${currentDateInfo.date} 的日期、月份或区间不能被标记为“未来时间”；如时间线不清晰，可以写“需核实时间线”，不要误判为未来。
 
 输出JSON字段：
 candidate_name, school, major, degree, ai_experience_summary, tool_usage, llm_knowledge, product_experience, data_work_experience, available_months, arrival_date, risk_notes, score, recommendation, interview_focus
@@ -219,7 +307,7 @@ ${safeResumeText.slice(0, 18000)}`;
       tool_usage: normalizeList(parsed.tool_usage ?? fallback.tool_usage),
       llm_knowledge: normalizeList(parsed.llm_knowledge ?? fallback.llm_knowledge),
       interview_focus: normalizeList(parsed.interview_focus ?? fallback.interview_focus),
-      risk_notes: normalizeText(parsed.risk_notes || fallback.risk_notes),
+      risk_notes: normalizeScreeningRiskNotes(parsed.risk_notes || fallback.risk_notes, currentDateInfo.date),
       source: 'bailian',
       privacy: { pii_redacted_before_model: true },
       raw_response_id: data.id || ''
@@ -227,6 +315,7 @@ ${safeResumeText.slice(0, 18000)}`;
   } catch (error) {
     return {
       ...fallback,
+      risk_notes: normalizeScreeningRiskNotes(fallback.risk_notes, currentDateInfo.date),
       source: 'heuristic',
       privacy: { pii_redacted_before_model: true },
       warning: `百炼筛选失败，已回退本地评分：${error.message}`
