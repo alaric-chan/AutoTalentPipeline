@@ -13,6 +13,9 @@
 }
 
 body {
+  background: #f4f6f8;
+  font-size: 14px;
+  line-height: 1.45;
   margin: 0;
   min-width: 320px;
 }
@@ -33,10 +36,10 @@ button {
   cursor: pointer;
   display: inline-flex;
   font-weight: 650;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
-  min-height: 36px;
-  padding: 8px 12px;
+  min-height: 32px;
+  padding: 6px 10px;
   white-space: nowrap;
 }
 
@@ -66,8 +69,8 @@ textarea {
   border: 1px solid #cbd5df;
   border-radius: 6px;
   color: #202a33;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 6px 9px;
   width: 100%;
 }
 
@@ -87,7 +90,7 @@ pre {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: 194px minmax(0, 1fr);
   min-height: 100vh;
   transition: grid-template-columns 180ms ease;
 }
@@ -115,9 +118,9 @@ pre {
   color: #d9e2ec;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   min-height: 100vh;
-  padding: 18px 14px;
+  padding: 14px 12px;
   position: sticky;
   top: 0;
   transition: opacity 160ms ease, padding 160ms ease, width 160ms ease;
@@ -127,12 +130,12 @@ pre {
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   display: grid;
   gap: 4px;
-  padding: 4px 6px 18px;
+  padding: 3px 6px 14px;
 }
 
 .brand-block strong {
   color: #fff;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .brand-block span,
@@ -152,11 +155,12 @@ pre {
   border-radius: 6px;
   color: #d9e2ec;
   display: grid;
-  gap: 8px;
+  font-size: 14px;
+  gap: 7px;
   grid-template-columns: auto 1fr auto;
   justify-content: start;
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 7px 9px;
   text-align: left;
   width: 100%;
 }
@@ -170,8 +174,9 @@ pre {
   background: rgba(255, 255, 255, 0.13);
   border-radius: 999px;
   color: #fff;
-  min-width: 26px;
-  padding: 2px 7px;
+  font-size: 12px;
+  min-width: 24px;
+  padding: 1px 6px;
   text-align: center;
 }
 
@@ -181,12 +186,12 @@ pre {
   display: flex;
   gap: 8px;
   margin-top: auto;
-  padding: 14px 6px 4px;
+  padding: 10px 6px 3px;
 }
 
 .workbench {
   min-width: 0;
-  padding: 24px;
+  padding: 18px;
 }
 
 .login-shell {
@@ -233,15 +238,15 @@ pre {
 .topbar {
   align-items: center;
   display: flex;
-  gap: 16px;
+  gap: 12px;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .topbar-title {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -251,12 +256,12 @@ pre {
 
 .nav-toggle {
   flex: 0 0 auto;
-  min-width: 38px;
-  padding: 8px;
+  min-width: 34px;
+  padding: 6px;
 }
 
 .topbar h1 {
-  font-size: 25px;
+  font-size: 22px;
   letter-spacing: 0;
   line-height: 1.2;
   margin: 0;
@@ -264,14 +269,15 @@ pre {
 
 .topbar p {
   color: #627384;
-  margin: 6px 0 0;
+  font-size: 13px;
+  margin: 3px 0 0;
 }
 
 .topbar-actions {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -282,10 +288,10 @@ pre {
   border-radius: 999px;
   color: #202a33;
   display: inline-flex;
-  font-size: 13px;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 12px;
+  font-size: 12px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
 }
 
 .current-user small {
@@ -316,10 +322,10 @@ pre {
   align-items: center;
   border-right: 1px solid #d8e0e8;
   display: grid;
-  gap: 4px 10px;
+  gap: 3px 8px;
   grid-template-columns: auto 1fr;
   min-width: 0;
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .status-item:last-child {
@@ -328,11 +334,11 @@ pre {
 
 .status-item span {
   color: #627384;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .status-item strong {
-  font-size: 17px;
+  font-size: 15px;
   grid-column: 2;
   min-width: 0;
   overflow: hidden;
@@ -343,8 +349,8 @@ pre {
 .notice,
 .busy {
   border-radius: 6px;
-  margin: 10px 0;
-  padding: 10px 12px;
+  margin: 8px 0;
+  padding: 8px 10px;
 }
 
 .notice {
@@ -438,11 +444,11 @@ pre {
 .compact-button {
   align-items: center;
   display: inline-flex;
-  font-size: 13px;
+  font-size: 12px;
   gap: 6px;
-  margin-bottom: 10px;
-  min-height: 32px;
-  padding: 6px 10px;
+  margin-bottom: 8px;
+  min-height: 28px;
+  padding: 5px 9px;
 }
 
 .primary-link,
@@ -454,9 +460,9 @@ pre {
   color: #fff;
   display: inline-flex;
   font-weight: 650;
-  gap: 8px;
-  min-height: 36px;
-  padding: 8px 12px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
   text-decoration: none;
 }
 
@@ -543,8 +549,8 @@ pre {
 
 .main-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(360px, 0.72fr) minmax(0, 1.65fr);
+  gap: 12px;
+  grid-template-columns: minmax(330px, 0.64fr) minmax(0, 1.72fr);
   min-height: 0;
 }
 
@@ -552,7 +558,7 @@ pre {
   align-self: start;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 188px);
+  height: calc(100vh - 150px);
   min-height: 0;
   overflow: hidden;
 }
@@ -561,13 +567,13 @@ pre {
 .detail-header,
 .verification h2 {
   border-bottom: 1px solid #d8e0e8;
-  padding: 16px;
+  padding: 12px;
 }
 
 .pane-title {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: space-between;
 }
 
@@ -577,14 +583,14 @@ pre {
 
 .pane-title-main {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .pane-heading-row {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pane-heading-row .compact-button {
@@ -594,7 +600,7 @@ pre {
 .pane-title h2,
 .detail-header h2,
 .verification h2 {
-  font-size: 18px;
+  font-size: 16px;
   margin: 0;
 }
 
@@ -606,14 +612,15 @@ pre {
 
 .pane-title small {
   color: #627384;
+  font-size: 12px;
 }
 
 .candidate-tools {
   border-bottom: 1px solid #eef2f5;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr 120px;
-  padding: 10px 14px;
+  gap: 7px;
+  grid-template-columns: 1fr 96px;
+  padding: 8px 10px;
 }
 
 .search-box {
@@ -624,12 +631,14 @@ pre {
 
 .search-box svg {
   color: #627384;
-  left: 10px;
+  height: 15px;
+  left: 9px;
   position: absolute;
+  width: 15px;
 }
 
 .search-box input {
-  padding-left: 34px;
+  padding-left: 30px;
 }
 
 .upload-drawer {
@@ -641,12 +650,12 @@ pre {
   color: #394b59;
   cursor: pointer;
   display: flex;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 750;
-  gap: 8px;
+  gap: 6px;
   list-style: none;
-  min-height: 38px;
-  padding: 8px 14px;
+  min-height: 32px;
+  padding: 7px 10px;
 }
 
 .upload-drawer summary::-webkit-details-marker {
@@ -660,9 +669,9 @@ pre {
 .upload-form {
   background: #fbfcfd;
   display: grid;
-  gap: 8px;
+  gap: 7px;
   grid-template-columns: 1fr 1fr;
-  padding: 0 14px 12px;
+  padding: 0 10px 10px;
 }
 
 .upload-form button,
@@ -682,10 +691,10 @@ pre {
   color: #394b59;
   cursor: pointer;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 6px 9px;
   position: relative;
 }
 
@@ -725,10 +734,11 @@ pre {
   color: #202a33;
   cursor: pointer;
   display: grid;
-  gap: 12px;
+  font-size: 13px;
+  gap: 8px;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  min-height: 54px;
-  padding: 10px 14px;
+  min-height: 46px;
+  padding: 8px 10px;
   text-align: left;
   white-space: normal;
   width: 100%;
@@ -760,7 +770,7 @@ pre {
   align-items: center;
   color: #202a33;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -775,13 +785,13 @@ pre {
   border-top: 1px solid #eef2f5;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 8px 10px;
 }
 
 .batch-toolbar span {
   color: #627384;
-  font-size: 13px;
+  font-size: 12px;
   margin-right: auto;
 }
 
@@ -791,19 +801,19 @@ pre {
   color: #fff;
   display: inline-flex;
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 3px 6px;
   text-transform: uppercase;
 }
 
 .stage-header {
   background: #f7f9fb;
   color: #627384;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 750;
-  min-height: 38px;
+  min-height: 32px;
   pointer-events: none;
   position: sticky;
   top: 0;
@@ -817,16 +827,16 @@ pre {
   display: flex;
   flex: 0 0 auto;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 8px 10px;
 }
 
 .pagination span {
   color: #627384;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .detail-pane {
-  max-height: calc(100vh - 188px);
+  max-height: calc(100vh - 150px);
   min-height: 0;
   overflow: auto;
 }
@@ -834,13 +844,14 @@ pre {
 .detail-header {
   align-items: center;
   display: flex;
-  gap: 16px;
+  gap: 12px;
   justify-content: space-between;
 }
 
 .detail-header p {
   color: #627384;
-  margin: 6px 0 0;
+  font-size: 13px;
+  margin: 4px 0 0;
 }
 
 .contact-strip {
@@ -848,8 +859,9 @@ pre {
   color: #627384;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  margin-top: 8px;
+  font-size: 13px;
+  gap: 6px 12px;
+  margin-top: 6px;
 }
 
 .contact-strip span {
@@ -866,7 +878,7 @@ pre {
 
 .actions-row {
   border-bottom: 1px solid #d8e0e8;
-  padding: 12px 16px;
+  padding: 10px 12px;
 }
 
 .actions-row.bare {
@@ -876,23 +888,23 @@ pre {
 
 .detail-columns {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   grid-template-columns: 1fr 1fr;
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .screening-layout {
   display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(220px, 0.68fr) minmax(0, 1.32fr);
-  padding: 14px 16px;
+  gap: 10px;
+  grid-template-columns: minmax(200px, 0.58fr) minmax(0, 1.42fr);
+  padding: 10px 12px;
 }
 
 .panel {
   border: 1px solid #d8e0e8;
   border-radius: 6px;
   min-width: 0;
-  padding: 14px;
+  padding: 12px;
 }
 
 .wide-panel {
@@ -901,12 +913,12 @@ pre {
 
 .panel h3,
 .panel-heading h3 {
-  font-size: 16px;
+  font-size: 15px;
   margin: 0;
 }
 
 .panel h3 {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .panel-heading h3 {
@@ -916,9 +928,9 @@ pre {
 .panel-heading {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   min-width: 0;
 }
 
@@ -927,7 +939,7 @@ pre {
 }
 
 .full {
-  margin: 0 16px 16px;
+  margin: 0 12px 12px;
 }
 
 .decision-panel {
@@ -937,7 +949,7 @@ pre {
 
 .decision-grid {
   display: grid;
-  gap: 12px;
+  gap: 9px;
   grid-template-columns: 1fr;
 }
 
@@ -945,7 +957,7 @@ pre {
   border-bottom: 1px solid #e4eaf0;
   display: grid;
   gap: 4px;
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .decision-grid div:last-child {
@@ -956,53 +968,53 @@ pre {
 .decision-grid span,
 .source-text {
   color: #627384;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .decision-grid strong {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .score-line {
   align-items: center;
   display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .score {
   align-items: center;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 42px minmax(120px, 1fr);
+  gap: 7px;
+  grid-template-columns: 38px minmax(110px, 1fr);
 }
 
 .score span {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 750;
 }
 
 .score meter {
-  height: 12px;
+  height: 10px;
   width: 100%;
 }
 
 .screening dl {
   display: grid;
-  gap: 8px 12px;
-  grid-template-columns: 92px 1fr;
-  margin: 12px 0 0;
+  gap: 7px 10px;
+  grid-template-columns: 84px 1fr;
+  margin: 10px 0 0;
 }
 
 .screening p {
-  line-height: 1.65;
-  margin: 0 0 12px;
+  line-height: 1.55;
+  margin: 0 0 10px;
 }
 
 .keyword-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .keyword-chips span {
@@ -1010,16 +1022,16 @@ pre {
   border: 1px solid #d7eadb;
   border-radius: 999px;
   color: #276749;
-  font-size: 12px;
-  line-height: 1.35;
-  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 3px 7px;
 }
 
 .markdown-content {
   color: #202a33;
   display: grid;
-  gap: 8px;
-  line-height: 1.6;
+  gap: 6px;
+  line-height: 1.55;
 }
 
 .markdown-content p {
@@ -1028,9 +1040,9 @@ pre {
 
 .markdown-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
-  padding-left: 18px;
+  padding-left: 17px;
 }
 
 .markdown-content code {
@@ -1045,20 +1057,20 @@ pre {
 
 .application-fields {
   display: grid;
-  gap: 8px 12px;
-  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 7px 10px;
+  grid-template-columns: 150px minmax(0, 1fr);
   margin: 0;
 }
 
 .profile-grid {
   display: grid;
-  gap: 10px 16px;
-  grid-template-columns: 120px minmax(0, 1fr) 120px minmax(0, 1fr);
+  gap: 8px 12px;
+  grid-template-columns: 104px minmax(0, 1fr) 104px minmax(0, 1fr);
   margin: 0;
 }
 
 .application-fields.compact {
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 
 .application-fields dt,
@@ -1077,6 +1089,7 @@ pre {
 .application-fields dt,
 .profile-grid dt {
   color: #627384;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1090,15 +1103,15 @@ pre {
 
 .profile-edit-form {
   display: grid;
-  gap: 10px 12px;
+  gap: 8px 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .profile-edit-form label {
   color: #627384;
   display: grid;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
 }
 
 .profile-edit-form .wide {
@@ -1107,16 +1120,16 @@ pre {
 
 .raw-fields {
   border-top: 1px solid #eef2f5;
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
 }
 
 .raw-fields summary {
   color: #394b59;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 750;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .resume-filebar {
@@ -1125,16 +1138,16 @@ pre {
   border: 1px solid #e4eaf0;
   border-radius: 6px;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
 }
 
 .resume-filebar > div:first-child {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -1148,7 +1161,7 @@ pre {
   align-items: center;
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: 6px;
 }
 
 .icon-link {
@@ -1158,11 +1171,11 @@ pre {
   border-radius: 6px;
   color: #202a33;
   display: inline-flex;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
   gap: 6px;
-  min-height: 32px;
-  padding: 6px 10px;
+  min-height: 28px;
+  padding: 5px 9px;
   text-decoration: none;
 }
 
