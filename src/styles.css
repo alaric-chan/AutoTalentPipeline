@@ -922,6 +922,10 @@ pre {
   min-width: 0;
 }
 
+.panel-heading > div {
+  min-width: 0;
+}
+
 .full {
   margin: 0 16px 16px;
 }
@@ -1063,6 +1067,23 @@ pre {
 .application-fields a {
   color: #17324d;
   font-weight: 650;
+}
+
+.profile-edit-form {
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.profile-edit-form label {
+  color: #627384;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.profile-edit-form .wide {
+  grid-column: 1 / -1;
 }
 
 .raw-fields {
@@ -1768,6 +1789,7 @@ pre {
     .application-fields,
     .application-fields.compact,
     .profile-grid,
+    .profile-edit-form,
     .data-map,
     .candidate-tools,
     .account-layout,

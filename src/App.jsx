@@ -180,7 +180,7 @@ const stageMeta = {
   screening: {
     title: '简历筛选',
     description: '按 AI 分数、推荐结论和风险备注筛选候选人',
-    columns: ['姓名', '来源', 'AI分', '推荐']
+    columns: ['姓名', '投递', '来源', 'AI分', '推荐']
   },
   schedule: {
     title: '面试安排',
@@ -210,6 +210,43 @@ function formatDateTime(value) {
     minute: '2-digit',
     hour12: false
   }).format(date);
+}
+
+function dateTimeValue(value) {
+  const text = cleanFieldValue(value);
+  if (!text) return '';
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const timestamp = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    const date = new Date(timestamp);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  const normalized = text.replace(/年|月/g, '-').replace(/日/g, '').replace(/\//g, '-');
+  const date = new Date(normalized.includes('T') ? normalized : normalized.replace(' ', 'T'));
+  if (!Number.isNaN(date.getTime())) return date.toISOString();
+  return text;
+}
+
+function candidateSubmittedAt(candidate) {
+  return (
+    dateTimeValue(candidate?.receivedAt) ||
+    dateTimeValue(applicationField(candidate, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'])) ||
+    dateTimeValue(candidate?.newAt) ||
+    dateTimeValue(candidate?.createdAt) ||
+    ''
+  );
+}
+
+function candidateSubmittedSortValue(candidate) {
+  const date = new Date(candidateSubmittedAt(candidate));
+  if (!Number.isNaN(date.getTime())) return date.getTime();
+  const fallback = new Date(candidate?.createdAt || candidate?.updatedAt || 0);
+  return Number.isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+}
+
+function sortCandidatesForStage(candidates, view) {
+  if (view !== 'screening') return candidates;
+  return [...candidates].sort((a, b) => candidateSubmittedSortValue(b) - candidateSubmittedSortValue(a));
 }
 
 function toDateInput(value) {
@@ -299,6 +336,14 @@ function candidatePhone(candidate) {
   return candidate?.phone || applicationField(candidate, ['联系电话', '手机', '电话']) || candidate?.phoneMasked || '';
 }
 
+function editableCandidateEmail(candidate) {
+  return candidate?.email || extractEmail(applicationField(candidate, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'])) || '';
+}
+
+function editableCandidatePhone(candidate) {
+  return candidate?.phone || applicationField(candidate, ['联系电话', '手机', '电话']) || '';
+}
+
 function candidateOfferStatus(candidate) {
   return (
     candidate?.offer?.acceptanceStatus ||
@@ -370,6 +415,7 @@ function candidateProfileItems(candidate) {
     ['姓名', candidate?.name || candidateEmail(candidate) || candidate?.id],
     ['联系邮箱', candidateEmail(candidate)],
     ['联系电话', candidatePhone(candidate)],
+    ['投递/导入时间', formatDateTime(candidateSubmittedAt(candidate))],
     ['最快到岗', applicationField(candidate, ['最快到岗时间', '预计入职时间'])],
     ['可实习时长', applicationField(candidate, ['可实习时长', '实习时长'])],
     ['简历文件', candidate?.resumeFile?.originalName || applicationField(candidate, ['简历', '简历PDF'])],
@@ -388,6 +434,11 @@ function visibleApplicationEntries(candidate) {
     '电子邮箱',
     'Email',
     'email',
+    '投递时间',
+    '提交时间',
+    '提交日期',
+    '创建时间',
+    '导入时间',
     '最快到岗时间',
     '预计入职时间',
     '可实习时长',
@@ -469,6 +520,7 @@ function stageCells(candidate, view) {
   }
   return [
     candidate.name || candidateEmail(candidate) || candidate.id,
+    formatDateTime(candidateSubmittedAt(candidate)),
     candidate.source || 'manual',
     candidate.screening?.score ?? '待筛',
     candidate.screening?.recommendation || candidate.status || '待筛选'
@@ -541,6 +593,17 @@ function defaultOfferDraft(candidate) {
   };
 }
 
+function defaultProfileDraft(candidate) {
+  return {
+    name: candidate?.name || '',
+    email: editableCandidateEmail(candidate),
+    phone: editableCandidatePhone(candidate),
+    receivedAt: candidateSubmittedAt(candidate),
+    arrival: applicationField(candidate, ['最快到岗时间', '预计入职时间']),
+    duration: applicationField(candidate, ['可实习时长', '实习时长'])
+  };
+}
+
 function SidebarButton({ active, icon, label, meta, onClick }) {
   return (
     <button className={`side-button ${active ? 'active' : ''}`} onClick={onClick}>
@@ -608,6 +671,8 @@ function App() {
   const [timePreset, setTimePreset] = useState('custom');
   const [recordDraft, setRecordDraft] = useState(() => defaultRecordDraft(null));
   const [offerDraft, setOfferDraft] = useState(() => defaultOfferDraft(null));
+  const [profileDraft, setProfileDraft] = useState(() => defaultProfileDraft(null));
+  const [profileEditing, setProfileEditing] = useState(false);
   const [preview, setPreview] = useState(null);
   const [deviceCode, setDeviceCode] = useState(null);
   const [larkStatus, setLarkStatus] = useState(null);
@@ -649,7 +714,7 @@ function App() {
 
   const interviewTimeOptions = useMemo(() => buildInterviewTimeOptions(), []);
   const stageCandidates = useMemo(
-    () => filterCandidatesByStage(candidates, activeView),
+    () => sortCandidatesForStage(filterCandidatesByStage(candidates, activeView), activeView),
     [activeView, candidates]
   );
 
@@ -717,7 +782,6 @@ function App() {
     setRuns(nextRuns);
     setInterviewTemplate(nextTemplate);
     if (!templateDirty) setTemplateDraft(nextTemplate.template);
-    if (!selectedId && nextCandidates[0]) setSelectedId(nextCandidates[0].id);
   }
 
   async function runAction(label, fn) {
@@ -875,6 +939,10 @@ function App() {
   useEffect(() => {
     setOfferDraft(defaultOfferDraft(selected));
   }, [selected?.id, selected?.offer?.updatedAt, selected?.offerRecords?.length]);
+
+  useEffect(() => {
+    if (!profileEditing) setProfileDraft(defaultProfileDraft(selected));
+  }, [profileEditing, selected?.id, selected?.updatedAt]);
 
   useEffect(() => {
     api('/api/security/status')
@@ -1109,6 +1177,42 @@ function App() {
     if (result?.id) setSelectedId(result.id);
     event.currentTarget.reset();
     setUploadFileName('');
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (!selected) return;
+    const result = await runAction('保存投递档案', () =>
+      api(`/api/candidates/${selected.id}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileDraft)
+      })
+    );
+    if (result?.id) {
+      setSelectedId(result.id);
+      setProfileEditing(false);
+      setProfileDraft(defaultProfileDraft(result));
+    }
+  }
+
+  async function openProfileEditor() {
+    if (!selected) return;
+    let editableCandidate = selected;
+    if (!selected._detailLoaded) {
+      try {
+        const detail = await api(`/api/candidates/${selected.id}`);
+        editableCandidate = { ...selected, ...detail, _detailLoaded: true };
+        setCandidates((items) =>
+          items.map((item) => (item.id === selected.id ? editableCandidate : item))
+        );
+      } catch (error) {
+        setNotice(error.message);
+        return;
+      }
+    }
+    setProfileDraft(defaultProfileDraft(editableCandidate));
+    setProfileEditing(true);
   }
 
   async function screenSelected() {
@@ -2478,19 +2582,94 @@ function App() {
 
                   <section className="panel full applicant-panel">
                     <div className="panel-heading">
-                      <h3>投递档案</h3>
-                      <span className="source-text">{selected.application?.picked?.email ? `邮箱字段：${selected.application.picked.email}` : ''}</span>
+                      <div>
+                        <h3>投递档案</h3>
+                        <span className="source-text">{selected.application?.picked?.email ? `邮箱字段：${selected.application.picked.email}` : ''}</span>
+                      </div>
+                      {profileEditing ? null : (
+                        <button className="compact-button" onClick={openProfileEditor} disabled={Boolean(busy)}>
+                          编辑档案
+                        </button>
+                      )}
                     </div>
-                    <dl className="profile-grid">
-                      {candidateProfileItems(selected).map(([key, value]) => (
-                        <React.Fragment key={key}>
-                          <dt>{key}</dt>
-                          <dd>
-                            <FieldValue value={value} />
-                          </dd>
-                        </React.Fragment>
-                      ))}
-                    </dl>
+                    {profileEditing ? (
+                      <form className="profile-edit-form" onSubmit={saveProfile}>
+                        <label>
+                          姓名
+                          <input
+                            value={profileDraft.name}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })}
+                            placeholder="候选人姓名"
+                          />
+                        </label>
+                        <label>
+                          联系邮箱
+                          <input
+                            value={profileDraft.email}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, email: event.target.value })}
+                            placeholder="候选人邮箱"
+                            type="email"
+                          />
+                        </label>
+                        <label>
+                          联系电话
+                          <input
+                            value={profileDraft.phone}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, phone: event.target.value })}
+                            placeholder="候选人电话"
+                          />
+                        </label>
+                        <label>
+                          投递/导入时间
+                          <input
+                            value={profileDraft.receivedAt}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, receivedAt: event.target.value })}
+                            placeholder="2026-05-27 15:30"
+                          />
+                        </label>
+                        <label>
+                          最快到岗
+                          <input
+                            value={profileDraft.arrival}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, arrival: event.target.value })}
+                            placeholder="最快到岗时间"
+                          />
+                        </label>
+                        <label>
+                          可实习时长
+                          <input
+                            value={profileDraft.duration}
+                            onChange={(event) => setProfileDraft({ ...profileDraft, duration: event.target.value })}
+                            placeholder="例如 3个月"
+                          />
+                        </label>
+                        <div className="actions-row bare wide">
+                          <button type="submit" disabled={Boolean(busy)}>保存档案</button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => {
+                              setProfileDraft(defaultProfileDraft(selected));
+                              setProfileEditing(false);
+                            }}
+                            disabled={Boolean(busy)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <dl className="profile-grid">
+                        {candidateProfileItems(selected).map(([key, value]) => (
+                          <React.Fragment key={key}>
+                            <dt>{key}</dt>
+                            <dd>
+                              <FieldValue value={value} />
+                            </dd>
+                          </React.Fragment>
+                        ))}
+                      </dl>
+                    )}
                     {visibleApplicationEntries(selected).length ? (
                       <details className="raw-fields">
                         <summary>原始字段</summary>

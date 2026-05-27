@@ -299,6 +299,7 @@ async function syncLarkBaseCandidates(options = {}, { trigger = 'manual', mode =
       let saved = await upsertCandidate({
         ...candidate,
         status: existing?.status || candidate.status,
+        receivedAt: candidate.receivedAt || existing?.receivedAt || candidate.createdAt || '',
         isNew: existing ? Boolean(existing.isNew) : true,
         newAt: existing?.newAt || (isNewCandidate ? new Date().toISOString() : null),
         viewedAt: existing?.viewedAt || null,
@@ -368,6 +369,86 @@ function maskPhone(value = '') {
   const digits = phone.replace(/\D/g, '');
   if (digits.length < 7) return phone ? '已填写' : '';
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+}
+
+function cleanProfileText(value = '', maxLength = 120) {
+  return String(value ?? '').trim().slice(0, maxLength);
+}
+
+function cleanProfileEmail(value = '') {
+  const text = cleanProfileText(value, 160);
+  if (!text) return '';
+  const email = parseEmailAddress(text);
+  if (!email || email !== text) {
+    const error = new Error('联系邮箱格式不正确。');
+    error.status = 400;
+    throw error;
+  }
+  return email;
+}
+
+function cleanProfilePhone(value = '') {
+  return cleanProfileText(value, 40);
+}
+
+function firstExistingField(fields, aliases, fallback) {
+  return aliases.find((alias) => Object.prototype.hasOwnProperty.call(fields, alias)) || fallback;
+}
+
+function updateField(fields, aliases, fallback, value) {
+  const key = firstExistingField(fields, aliases, fallback);
+  if (value) {
+    fields[key] = value;
+  } else {
+    delete fields[key];
+  }
+  return key;
+}
+
+function buildProfilePatch(candidate, body = {}) {
+  const fields = { ...(candidate.application?.fields || {}) };
+  const picked = { ...(candidate.application?.picked || {}) };
+  const name = cleanProfileText(body.name, 48);
+  const email = cleanProfileEmail(body.email);
+  const phone = cleanProfilePhone(body.phone);
+  const arrival = cleanProfileText(body.arrival, 80);
+  const duration = cleanProfileText(body.duration, 80);
+  const receivedAt = cleanProfileText(body.receivedAt, 80);
+  picked.name = updateField(fields, ['姓名', '名字', '候选人', '应聘者', 'Name'], picked.name || '姓名', name);
+  picked.email = updateField(fields, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'], picked.email || '联系邮箱', email);
+  picked.phone = updateField(fields, ['联系电话', '手机', '电话', '手机号', '联系方式'], picked.phone || '联系电话', phone);
+  updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', arrival);
+  updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', duration);
+  updateField(fields, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'], '投递时间', receivedAt);
+
+  const nextCandidate = {
+    ...candidate,
+    name,
+    email,
+    phone,
+    receivedAt,
+    application: {
+      ...(candidate.application || {}),
+      fields,
+      picked
+    }
+  };
+  return {
+    name,
+    email,
+    phone,
+    receivedAt,
+    application: nextCandidate.application,
+    identityKey: candidateIdentityKey(nextCandidate),
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: new Date().toISOString(),
+        action: '编辑候选人投递档案',
+        detail: [name, email, phone].filter(Boolean).join(' · ')
+      }
+    ]
+  };
 }
 
 function resumeContentType(file = {}) {
@@ -839,6 +920,19 @@ app.get('/api/candidates/:id', asyncRoute(async (req, res) => {
   res.json(stripPrivateCandidate(requireCandidate(await getCandidate(req.params.id)), { detail: true }));
 }));
 
+app.patch('/api/candidates/:id/profile', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  const patch = buildProfilePatch(candidate, req.body || {});
+  const updated = await patchCandidate(candidate.id, patch);
+  await addVerificationRun({
+    type: 'candidate-profile-edit',
+    status: 'passed',
+    detail: `${updated.name || updated.email || updated.id}：投递档案已更新`,
+    mode: req.currentUser?.username || req.authMode || 'manual'
+  });
+  res.json(stripPrivateCandidate(updated, { detail: true }));
+}));
+
 app.get('/api/candidates/:id/resume-file', asyncRoute(async (req, res) => {
   const candidate = requireCandidate(await getCandidate(req.params.id));
   if (!candidate.resumeFile?.path) {
@@ -878,6 +972,7 @@ app.post('/api/candidates/upload', upload.single('resume'), asyncRoute(async (re
     phone,
     source: 'manual',
     status: '待人工确认',
+    receivedAt: new Date().toISOString(),
     isNew: true,
     newAt: new Date().toISOString(),
     viewedAt: null,

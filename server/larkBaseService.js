@@ -16,6 +16,7 @@ const FIELD_ALIASES = {
   major: ['专业', 'Major'],
   duration: ['可实习时长', '实习时长', '可实习月份', 'Internship Duration'],
   arrival: ['到岗时间', '最快到岗', '入职时间', 'Arrival'],
+  submittedAt: ['投递时间', '提交时间', '提交日期', '创建时间', '收集时间', '报名时间', 'Submitted At'],
   aiExperience: ['AI工具经验', 'AI使用经验', 'AI经验', 'LLM经验', 'AI Experience'],
   resume: ['简历', '附件', '上传简历', '简历附件', 'Resume', 'CV']
 };
@@ -137,6 +138,33 @@ function textFromCell(value) {
   return '';
 }
 
+function normalizeDateTimeValue(value) {
+  const raw = textFromCell(value);
+  const text = compact(raw);
+  if (!text) return '';
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const timestamp = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    const date = new Date(timestamp);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  const normalized = text.replace(/年|月/g, '-').replace(/日/g, '').replace(/\//g, '-');
+  const date = new Date(normalized.includes('T') ? normalized : normalized.replace(' ', 'T'));
+  if (!Number.isNaN(date.getTime())) return date.toISOString();
+  return text;
+}
+
+function recordSubmittedAt(record, fields, picked) {
+  const direct =
+    record.created_time ||
+    record.createdTime ||
+    record.created_at ||
+    record.createdAt ||
+    record.created_at_time ||
+    record.fields?.created_time;
+  return normalizeDateTimeValue(direct) || (picked.submittedAt ? normalizeDateTimeValue(fields[picked.submittedAt]) : '');
+}
+
 function hasCellValue(value) {
   return Boolean(compact(textFromCell(value)));
 }
@@ -223,6 +251,7 @@ function applicationSummary(fields, picked) {
     picked.major ? `专业：${textFromCell(fields[picked.major])}` : '',
     picked.duration ? `可实习时长：${textFromCell(fields[picked.duration])}` : '',
     picked.arrival ? `到岗时间：${textFromCell(fields[picked.arrival])}` : '',
+    picked.submittedAt ? `投递时间：${textFromCell(fields[picked.submittedAt])}` : '',
     picked.aiExperience ? `AI经验：${textFromCell(fields[picked.aiExperience])}` : '',
     '',
     '飞书表单字段：',
@@ -428,6 +457,7 @@ export async function pullLarkCandidates(options = {}) {
       : fallbackText;
     const emailText = picked.email ? textFromCell(fields[picked.email]) : fallbackText;
     const name = picked.name ? textFromCell(fields[picked.name]) : '';
+    const receivedAt = recordSubmittedAt(record, fields, picked);
 
     candidates.push({
       id: makeCandidateId(recordId),
@@ -437,6 +467,7 @@ export async function pullLarkCandidates(options = {}) {
       school: picked.school ? textFromCell(fields[picked.school]) : '',
       source: 'lark-base',
       status: '待筛选',
+      receivedAt,
       resumeFile,
       resumeText,
       messageSubject: `飞书投递记录 ${recordId}`,

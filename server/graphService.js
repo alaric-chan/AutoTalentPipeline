@@ -344,7 +344,7 @@ async function graphBinaryRequest(pathname) {
 function isResumeAttachment(attachment) {
   const name = attachment.name || '';
   if (attachment.isInline) return false;
-  return /\.(pdf|docx|txt|md)$/i.test(name);
+  return /\.(pdf|doc|docx|txt|md)$/i.test(name);
 }
 
 async function importCandidateFromResume({ message, attachment, buffer, resumeText }) {
