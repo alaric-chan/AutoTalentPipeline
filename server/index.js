@@ -25,7 +25,7 @@ import {
   upsertUser,
   upsertCandidate
 } from './store.js';
-import { extractResumeText } from './resumeParser.js';
+import { extractResumeProfile, extractResumeText, parseEmailAddress, parsePhoneNumber } from './resumeParser.js';
 import {
   buildAuthUrl,
   buildPublicAuthUrl,
@@ -62,6 +62,7 @@ await fs.mkdir(paths.larkDownloads, { recursive: true });
 
 const app = express();
 const upload = multer({ dest: paths.uploads });
+const allowedResumeExtensions = new Set(['.pdf', '.doc', '.docx', '.txt', '.md']);
 const hasBuiltFrontend = await fs
   .access(path.join(paths.dist, 'index.html'))
   .then(() => true)
@@ -286,6 +287,15 @@ function assertAllowedResumePath(filePath = '') {
     throw error;
   }
   return resolved;
+}
+
+async function assertAllowedResumeUpload(file) {
+  const ext = path.extname(file?.originalname || '').toLowerCase();
+  if (allowedResumeExtensions.has(ext)) return ext;
+  await fs.unlink(file.path).catch(() => {});
+  const error = new Error('只支持上传 PDF、Word、TXT 或 Markdown 简历文件。');
+  error.status = 400;
+  throw error;
 }
 
 function pickApplicationFields(fields = {}) {
@@ -775,14 +785,22 @@ app.post('/api/candidates/upload', upload.single('resume'), asyncRoute(async (re
     error.status = 400;
     throw error;
   }
-  const ext = path.extname(req.file.originalname || '');
+  const ext = await assertAllowedResumeUpload(req.file);
   const stablePath = path.join(paths.uploads, `${newId('resume')}${ext}`);
   await fs.rename(req.file.path, stablePath);
   const resumeText = await extractResumeText(stablePath, req.file.mimetype);
+  const parsedProfile = extractResumeProfile({
+    text: resumeText,
+    filename: req.file.originalname
+  });
+  const name = String(req.body.name || '').trim() || parsedProfile.name;
+  const email = parseEmailAddress(req.body.email) || parsedProfile.email;
+  const phone = parsePhoneNumber(req.body.phone) || parsedProfile.phone;
   let candidate = await upsertCandidate({
     id: newId('cand'),
-    name: req.body.name || '',
-    email: req.body.email || '',
+    name,
+    email,
+    phone,
     source: 'manual',
     status: '待人工确认',
     isNew: true,
@@ -795,12 +813,25 @@ app.post('/api/candidates/upload', upload.single('resume'), asyncRoute(async (re
       mimeType: req.file.mimetype
     },
     resumeText,
+    application: {
+      fields: {
+        姓名: name,
+        联系邮箱: email,
+        联系电话: phone,
+        简历文件: req.file.originalname
+      },
+      picked: {
+        name: name ? 'resume-auto-parse' : '',
+        email: email ? 'resume-auto-parse' : '',
+        phone: phone ? 'resume-auto-parse' : ''
+      }
+    },
     screening: null,
     timeline: [
       {
         at: new Date().toISOString(),
         action: '人工上传简历',
-        detail: req.file.originalname
+        detail: [req.file.originalname, name, email, phone].filter(Boolean).join(' · ')
       }
     ]
   });

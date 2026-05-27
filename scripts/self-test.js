@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { extractResumeProfile } from '../server/resumeParser.js';
 
 const port = process.env.PORT || 4317;
 const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
@@ -48,6 +49,27 @@ function startServer() {
   return child;
 }
 
+function assertResumeProfileParsing() {
+  const profile = extractResumeProfile({
+    filename: '北京邮电大学-电子科学与技术-王萌-简历.pdf',
+    text: [
+      '姓名：王萌',
+      '联系邮箱：wm.resume@example.com',
+      '联系电话：138 0013 8000',
+      '具备 Agent Workflow 与 Prompt 工程实践经验'
+    ].join('\n')
+  });
+  if (profile.name !== '王萌') {
+    throw new Error(`resume profile name parse failed: ${profile.name}`);
+  }
+  if (profile.email !== 'wm.resume@example.com') {
+    throw new Error(`resume profile email parse failed: ${profile.email}`);
+  }
+  if (!profile.phone.includes('138')) {
+    throw new Error(`resume profile phone parse failed: ${profile.phone}`);
+  }
+}
+
 async function waitForServer() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10_000) {
@@ -61,6 +83,7 @@ async function main() {
   let child = null;
   let dbBackup = null;
   try {
+    assertResumeProfileParsing();
     if (process.env.SELF_TEST_RESTORE !== 'false') {
       dbBackup = await fs.readFile(dbPath, 'utf8').catch(() => null);
     }

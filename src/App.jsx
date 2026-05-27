@@ -618,6 +618,7 @@ function App() {
   const [templateDraft, setTemplateDraft] = useState(null);
   const [templateDirty, setTemplateDirty] = useState(false);
   const [batchSelection, setBatchSelection] = useState([]);
+  const [uploadFileName, setUploadFileName] = useState('');
   const [showResumeText, setShowResumeText] = useState(false);
   const [resumePreview, setResumePreview] = useState({
     candidateId: '',
@@ -1075,6 +1076,11 @@ function App() {
   async function uploadResume(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const file = form.get('resume');
+    if (!(file instanceof File) || !file.name) {
+      setNotice('请选择 Word 或 PDF 简历文件。');
+      return;
+    }
     const result = await runAction('上传简历', () =>
       api('/api/candidates/upload', {
         method: 'POST',
@@ -1083,6 +1089,7 @@ function App() {
     );
     if (result?.id) setSelectedId(result.id);
     event.currentTarget.reset();
+    setUploadFileName('');
   }
 
   async function screenSelected() {
@@ -1770,9 +1777,16 @@ function App() {
                   <form className="upload-form" onSubmit={uploadResume}>
                     <input name="name" placeholder="姓名" />
                     <input name="email" placeholder="联系邮箱" type="email" />
+                    <input name="phone" placeholder="联系电话" inputMode="tel" />
                     <label className="file-input">
                       <Upload size={16} />
-                      <input name="resume" type="file" accept=".pdf,.docx,.txt,.md" required />
+                      <span>{uploadFileName || '选择 Word/PDF'}</span>
+                      <input
+                        name="resume"
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(event) => setUploadFileName(event.target.files?.[0]?.name || '')}
+                      />
                     </label>
                     <button type="submit" disabled={Boolean(busy)}>上传</button>
                   </form>

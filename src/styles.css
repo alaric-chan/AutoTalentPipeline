@@ -613,8 +613,13 @@ pre {
 }
 
 .upload-form button,
-.file-input {
+.file-input,
+.file-input span {
   min-width: 0;
+}
+
+.upload-form button {
+  grid-column: 1 / -1;
 }
 
 .file-input {
@@ -628,10 +633,22 @@ pre {
   justify-content: center;
   min-height: 36px;
   padding: 8px 10px;
+  position: relative;
+}
+
+.file-input span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-input input {
-  display: none;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
 }
 
 .candidate-list {
