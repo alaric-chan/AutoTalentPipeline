@@ -35,6 +35,9 @@ const pageSize = 12;
 const defaultInterviewDurationMinutes = 30;
 const interviewDurationOptions = [15, 30, 45, 60];
 const offerAcceptanceOptions = ['待确认', '考虑中', '已接受', '已拒绝', '放弃', '已入职'];
+const fullDateTokenPattern = '(?:19|20)\\d{2}(?:(?:[年./-]\\d{1,2})(?:(?:[月./-]\\d{1,2}日?)|月份|月)?)?';
+const shortDateTokenPattern = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
+const riskDateRangePattern = `${fullDateTokenPattern}(?:\\s*[-—–~至到]\\s*(?:${fullDateTokenPattern}|${shortDateTokenPattern}))?`;
 const defaultUserDraft = {
   username: '',
   displayName: '',
@@ -279,6 +282,9 @@ function parseResumeDateToken(value, fallbackYear = '') {
     .replace(/日/g, '')
     .replace(/[./]/g, '-')
     .replace(/-+$/g, '');
+  if (/^(?:19|20)\d{2}$/.test(normalized)) {
+    return new Date(Number(normalized), 11, 31);
+  }
   const matched = normalized.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/) || normalized.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
   if (!matched) return null;
   const year = matched[1].length === 4 ? matched[1] : fallbackYear;
@@ -296,7 +302,14 @@ function riskRangeEndsInFuture(rangeText) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const normalized = String(rangeText || '').replace(/\s+/g, '');
-  const tokens = normalized.match(/(?:19|20)\d{2}[年./-]\d{1,2}(?:(?:[月./-]\d{1,2}日?)|月份|月)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  const yearRange = normalized.match(/^((?:19|20)\d{2})[-—–~至到]((?:19|20)\d{2})年?$/);
+  if (yearRange) return Number(yearRange[2]) > today.getFullYear();
+  const hasMonthOrDay = /(?:19|20)\d{2}[年./-]\d{1,2}|\d{1,2}[月./-]\d{1,2}/.test(normalized);
+  if (!hasMonthOrDay) {
+    const years = (normalized.match(/(?:19|20)\d{2}/g) || []).map(Number);
+    return years.length ? Math.max(...years) > today.getFullYear() : true;
+  }
+  const tokens = normalized.match(/(?:19|20)\d{2}(?:(?:[年./-]\d{1,2})(?:(?:[月./-]\d{1,2}日?)|月份|月)?)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
   const start = parseResumeDateToken(tokens[0]);
   const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
   const end = parseResumeDateToken(tokens.at(-1), startYear) || start;
@@ -304,19 +317,67 @@ function riskRangeEndsInFuture(rangeText) {
   return end.getTime() > today.getTime();
 }
 
+function riskRangeLooksReversed(rangeText) {
+  const normalized = String(rangeText || '').replace(/\s+/g, '');
+  const tokens = normalized.match(/(?:19|20)\d{2}(?:(?:[年./-]\d{1,2})(?:(?:[月./-]\d{1,2}日?)|月份|月)?)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  if (tokens.length < 2) return false;
+  const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
+  const start = parseResumeDateToken(tokens[0]);
+  const end = parseResumeDateToken(tokens.at(-1), startYear);
+  if (!start || !end) return false;
+  return start.getTime() > end.getTime();
+}
+
+function stripRiskMarker(line) {
+  return String(line || '').replace(/^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*/, '').trim();
+}
+
+function splitRiskItems(text) {
+  const withBreaks = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/([。；;])\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/g, '$1\n$2')
+    .replace(/\s+((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s+)/g, '\n$1');
+  return withBreaks
+    .split(/\n+/)
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return [];
+      if (/^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s+/.test(trimmed)) return [trimmed];
+      return trimmed.split(/[；;]/).map((item) => item.trim()).filter(Boolean);
+    });
+}
+
+function isFalseTimelineRiskItem(line) {
+  const cleanLine = stripRiskMarker(line);
+  const yearRanges = cleanLine.match(/(?:19|20)\d{2}\s*[-—–~至到]\s*(?:19|20)\d{2}年?/g) || [];
+  const dateRanges = (cleanLine.match(new RegExp(riskDateRangePattern, 'g')) || []).filter(
+    (range) => !yearRanges.some((yearRange) => yearRange.replace(/\s+/g, '').includes(range.replace(/\s+/g, '')))
+  );
+  const ranges = [...yearRanges, ...dateRanges];
+  if (!ranges.length) return false;
+  if (ranges.some((range) => riskRangeEndsInFuture(range) || riskRangeLooksReversed(range))) return false;
+  return /未来时间|未来日期|时间线异常|规划版简历|疑似.*(?:笔误|规划)|笔误或规划|疑似.*排版错误/.test(cleanLine);
+}
+
+function removeFalseTimelineRiskItems(text) {
+  const items = splitRiskItems(text);
+  if (items.length <= 1) return isFalseTimelineRiskItem(text) ? '' : text;
+  return items.filter((item) => !isFalseTimelineRiskItem(item)).join('\n');
+}
+
 function normalizeFutureRiskLabels(value) {
   const text = cleanFieldValue(value);
-  if (!text || !text.includes('未来时间')) return text;
-  const dateToken = '(?:19|20)\\d{2}[年./-]\\d{1,2}(?:(?:[月./-]\\d{1,2}日?)|月份|月)?';
-  const shortToken = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
-  const dateRange = `${dateToken}(?:\\s*[-—–~至到]\\s*(?:${dateToken}|${shortToken}))?`;
-  return text
-    .replace(new RegExp(`(${dateRange})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
-      if (riskRangeEndsInFuture(range)) return match;
-      return `${range}${middle}`;
-    })
-    .replace(/（\s*）|\(\s*\)/g, '')
-    .replace(/\s+([，,。；;])/g, '$1');
+  if (!text) return '';
+  const cleaned = text.includes('未来时间')
+    ? text
+      .replace(new RegExp(`(${riskDateRangePattern})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
+        if (riskRangeEndsInFuture(range)) return match;
+        return `${range}${middle}`;
+      })
+      .replace(/（\s*）|\(\s*\)/g, '')
+      .replace(/\s+([，,。；;])/g, '$1')
+    : text;
+  return removeFalseTimelineRiskItems(cleaned);
 }
 
 function dateTimeValue(value) {
@@ -1393,10 +1454,30 @@ function App() {
 
   async function screenSelected() {
     if (!selected) return;
-    const result = await runAction('筛选简历', () =>
+    const result = await runAction(selected.screening ? '重跑AI评分' : '筛选简历', () =>
       api(`/api/candidates/${selected.id}/screen`, { method: 'POST' })
     );
     if (result?.id) setSelectedId(result.id);
+  }
+
+  async function rescreenCurrentList() {
+    if (!filteredCandidates.length) {
+      setNotice('当前列表没有可重跑的候选人。');
+      return;
+    }
+    const ids = filteredCandidates.map((candidate) => candidate.id);
+    const label = `批量重跑AI评分 ${ids.length}人`;
+    const result = await runAction(label, () =>
+      api('/api/candidates/screen-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, limit: ids.length })
+      })
+    );
+    if (result?.screened?.[0]?.id) setSelectedId(result.screened[0].id);
+    if (result?.failed?.length) {
+      setNotice(`${label}完成，${result.failed.length}人失败`);
+    }
   }
 
   async function reviewSelected(decision) {
@@ -2060,15 +2141,26 @@ function App() {
                   <div className="pane-heading-row">
                     <h2>{stageMeta[activeView].title}</h2>
                     {activeView === 'screening' ? (
-                      <button
-                        className="compact-button"
-                        onClick={syncLark}
-                        disabled={Boolean(busy) || !larkCanSync}
-                        title="立即同步飞书表单投递"
-                      >
-                        <Inbox size={15} />
-                        同步表单投递
-                      </button>
+                      <>
+                        <button
+                          className="compact-button"
+                          onClick={syncLark}
+                          disabled={Boolean(busy) || !larkCanSync}
+                          title="立即同步飞书表单投递"
+                        >
+                          <Inbox size={15} />
+                          同步表单投递
+                        </button>
+                        <button
+                          className="compact-button"
+                          onClick={rescreenCurrentList}
+                          disabled={Boolean(busy) || !filteredCandidates.length}
+                          title="按当前搜索和状态筛选结果批量重跑AI评分"
+                        >
+                          <FileSearch size={15} />
+                          重跑当前列表
+                        </button>
+                      </>
                     ) : null}
                   </div>
                   <small>{stageMeta[activeView].description}</small>
@@ -2257,12 +2349,10 @@ function App() {
                             撤销判断
                           </button>
                         ) : null}
-                        {!selected.screening ? (
-                          <button className="ghost-button" onClick={screenSelected} disabled={Boolean(busy)}>
-                            <FileSearch size={16} />
-                            补跑AI评分
-                          </button>
-                        ) : null}
+                        <button className="ghost-button" onClick={screenSelected} disabled={Boolean(busy)}>
+                          <FileSearch size={16} />
+                          {selected.screening ? '重跑AI评分' : '补跑AI评分'}
+                        </button>
                       </>
                     ) : null}
                     {activeView === 'schedule' ? (

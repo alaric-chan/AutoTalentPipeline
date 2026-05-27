@@ -2,6 +2,10 @@ import { config } from './config.js';
 
 const aiTools = ['ChatGPT', 'Claude', 'Gemini', 'DeepSeek', '通义', 'Kimi', '豆包', 'Copilot'];
 const llmTerms = ['RAG', 'SFT', 'Agent', 'MCP', 'Context Engineering', 'Workflow', 'WorkFlow', '知识库', '评测', '微调', 'Prompt'];
+const fullDateToken = '(?:19|20)\\d{2}(?:(?:[年./-]\\d{1,2})(?:(?:[月./-]\\d{1,2}日?)|月份|月)?)?';
+const shortDateToken = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
+const dateRangePattern = `${fullDateToken}(?:\\s*[-—–~至到]\\s*(?:${fullDateToken}|${shortDateToken}))?`;
+const dateRangeRegex = new RegExp(dateRangePattern, 'g');
 
 function unique(values) {
   const seen = new Set();
@@ -85,6 +89,9 @@ function parseResumeDateToken(value, fallbackYear = '') {
     .replace(/日/g, '')
     .replace(/[./]/g, '-')
     .replace(/-+$/g, '');
+  if (/^(?:19|20)\d{2}$/.test(normalized)) {
+    return new Date(Number(normalized), 11, 31);
+  }
   const matched = normalized.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/) || normalized.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
   if (!matched) return null;
   const year = matched[1].length === 4 ? matched[1] : fallbackYear;
@@ -103,7 +110,14 @@ function rangeEndsInFuture(rangeText, todayText = currentRecruitingDateInfo().da
   const today = parseResumeDateToken(todayText);
   if (!today) return true;
   const normalized = String(rangeText || '').replace(/\s+/g, '');
-  const tokens = normalized.match(/(?:19|20)\d{2}[年./-]\d{1,2}(?:(?:[月./-]\d{1,2}日?)|月份|月)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  const yearRange = normalized.match(/^((?:19|20)\d{2})[-—–~至到]((?:19|20)\d{2})年?$/);
+  if (yearRange) return Number(yearRange[2]) > today.getFullYear();
+  const hasMonthOrDay = /(?:19|20)\d{2}[年./-]\d{1,2}|\d{1,2}[月./-]\d{1,2}/.test(normalized);
+  if (!hasMonthOrDay) {
+    const years = (normalized.match(/(?:19|20)\d{2}/g) || []).map(Number);
+    return years.length ? Math.max(...years) > today.getFullYear() : true;
+  }
+  const tokens = normalized.match(/(?:19|20)\d{2}(?:(?:[年./-]\d{1,2})(?:(?:[月./-]\d{1,2}日?)|月份|月)?)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
   const start = parseResumeDateToken(tokens[0]);
   const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
   const end = parseResumeDateToken(tokens.at(-1), startYear) || start;
@@ -111,19 +125,70 @@ function rangeEndsInFuture(rangeText, todayText = currentRecruitingDateInfo().da
   return end.getTime() > today.getTime();
 }
 
+function rangeLooksReversed(rangeText) {
+  const normalized = String(rangeText || '').replace(/\s+/g, '');
+  const tokens = normalized.match(/(?:19|20)\d{2}(?:(?:[年./-]\d{1,2})(?:(?:[月./-]\d{1,2}日?)|月份|月)?)?|\b\d{1,2}(?:[月./-]\d{1,2}日?)?\b/g) || [];
+  if (tokens.length < 2) return false;
+  const startYear = tokens[0]?.match(/\d{4}/)?.[0] || '';
+  const start = parseResumeDateToken(tokens[0]);
+  const end = parseResumeDateToken(tokens.at(-1), startYear);
+  if (!start || !end) return false;
+  return start.getTime() > end.getTime();
+}
+
+function stripRiskMarker(line) {
+  return String(line || '').replace(/^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*/, '').trim();
+}
+
+function splitRiskItems(text) {
+  const withBreaks = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/([。；;])\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/g, '$1\n$2')
+    .replace(/\s+((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s+)/g, '\n$1');
+  const lines = withBreaks
+    .split(/\n+/)
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return [];
+      if (/^(\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s+/.test(trimmed)) return [trimmed];
+      return trimmed.split(/[；;]/).map((item) => item.trim()).filter(Boolean);
+    });
+  return lines;
+}
+
+function isFalseTimelineRiskItem(line, todayText) {
+  const cleanLine = stripRiskMarker(line);
+  const yearRanges = cleanLine.match(/(?:19|20)\d{2}\s*[-—–~至到]\s*(?:19|20)\d{2}年?/g) || [];
+  const dateRanges = (cleanLine.match(dateRangeRegex) || []).filter(
+    (range) => !yearRanges.some((yearRange) => yearRange.replace(/\s+/g, '').includes(range.replace(/\s+/g, '')))
+  );
+  const ranges = [...yearRanges, ...dateRanges];
+  if (!ranges.length) return false;
+  if (ranges.some((range) => rangeEndsInFuture(range, todayText) || rangeLooksReversed(range))) return false;
+  return /未来时间|未来日期|时间线异常|规划版简历|疑似.*(?:笔误|规划)|笔误或规划|疑似.*排版错误/.test(cleanLine);
+}
+
+function removeFalseTimelineRiskItems(text, todayText) {
+  const items = splitRiskItems(text);
+  if (items.length <= 1) return isFalseTimelineRiskItem(text, todayText) ? '' : text;
+  return items
+    .filter((item) => !isFalseTimelineRiskItem(item, todayText))
+    .join('\n');
+}
+
 export function normalizeScreeningRiskNotes(value, todayText = currentRecruitingDateInfo().date) {
   const text = normalizeText(value);
-  if (!text || !text.includes('未来时间')) return text;
-  const dateToken = '(?:19|20)\\d{2}[年./-]\\d{1,2}(?:(?:[月./-]\\d{1,2}日?)|月份|月)?';
-  const shortToken = '\\d{1,2}(?:[月./-]\\d{1,2}日?)?';
-  const dateRange = `${dateToken}(?:\\s*[-—–~至到]\\s*(?:${dateToken}|${shortToken}))?`;
-  return text
-    .replace(new RegExp(`(${dateRange})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
-      if (rangeEndsInFuture(range, todayText)) return match;
-      return `${range}${middle}`;
-    })
-    .replace(/（\s*）|\(\s*\)/g, '')
-    .replace(/\s+([，,。；;])/g, '$1');
+  if (!text) return '';
+  const cleaned = text.includes('未来时间')
+    ? text
+      .replace(new RegExp(`(${dateRangePattern})([^。；;，,]*?)(?:（未来时间）|\\(未来时间\\)|未来时间)`, 'g'), (match, range, middle) => {
+        if (rangeEndsInFuture(range, todayText)) return match;
+        return `${range}${middle}`;
+      })
+      .replace(/（\s*）|\(\s*\)/g, '')
+      .replace(/\s+([，,。；;])/g, '$1')
+    : text;
+  return removeFalseTimelineRiskItems(cleaned, todayText);
 }
 
 export function normalizeScreeningForDisplay(screening) {
@@ -255,6 +320,7 @@ ${config.recruiting.jd}
 - 你不能联网获取实时日期，所有“当前/未来/过去”的判断必须只以这个日期为准。
 - 只有晚于 ${currentDateInfo.date} 的日期或日期区间结束时间，才可以在 risk_notes 中称为“未来时间”。
 - 早于或等于 ${currentDateInfo.date} 的日期、月份或区间不能被标记为“未来时间”；如时间线不清晰，可以写“需核实时间线”，不要误判为未来。
+- 只有“2025-2026年”这类年份范围、且结束年份不晚于当前年份时，不能据此判断为未来、异常或规划版简历；除非简历内部存在起止倒挂、冲突或明确晚于今天的月份/日期。
 
 输出JSON字段：
 candidate_name, school, major, degree, ai_experience_summary, tool_usage, llm_knowledge, product_experience, data_work_experience, available_months, arrival_date, risk_notes, score, recommendation, interview_focus

@@ -929,6 +929,32 @@ app.get('/api/candidates', asyncRoute(async (req, res) => {
   res.json(candidates.map((candidate) => stripPrivateCandidate(candidate)));
 }));
 
+app.post('/api/candidates/screen-batch', asyncRoute(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter(Boolean) : [];
+  const candidates = await listCandidates();
+  const selectedIds = ids.length ? new Set(ids) : new Set(candidates.map((candidate) => candidate.id));
+  const limit = Math.max(1, Math.min(Number(req.body?.limit || selectedIds.size || 30), 50));
+  const targets = candidates.filter((candidate) => selectedIds.has(candidate.id)).slice(0, limit);
+  const screened = [];
+  const failed = [];
+  for (const item of targets) {
+    try {
+      const candidate = requireCandidate(await getCandidate(item.id));
+      const result = await screenCandidate(candidate);
+      screened.push(stripPrivateCandidate(result, { detail: true }));
+    } catch (error) {
+      failed.push({ id: item.id, error: error.message });
+    }
+  }
+  await addVerificationRun({
+    type: 'resume-screen-batch',
+    status: failed.length ? 'warning' : 'passed',
+    detail: `批量重跑 ${screened.length}/${targets.length} 位候选人AI评分`,
+    mode: req.currentUser?.username || req.authMode || 'manual'
+  });
+  res.json({ total: targets.length, screened, failed });
+}));
+
 app.get('/api/candidates/:id', asyncRoute(async (req, res) => {
   res.json(stripPrivateCandidate(requireCandidate(await getCandidate(req.params.id)), { detail: true }));
 }));
