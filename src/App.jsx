@@ -2135,7 +2135,7 @@ function App() {
 
         {candidateStageViews.includes(activeView) ? (
           <section className="main-grid">
-            <aside className="candidate-pane">
+            <aside className="candidate-pane" data-view={activeView}>
               <div className="pane-title">
                 <div className="pane-title-main">
                   <div className="pane-heading-row">
