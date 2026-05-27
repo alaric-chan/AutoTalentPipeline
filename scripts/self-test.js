@@ -97,6 +97,35 @@ async function main() {
     if (!response.ok) {
       throw new Error(data.error || `self-test failed: ${response.status}`);
     }
+    const candidateId = data.steps?.find((step) => step.candidateId)?.candidateId;
+    if (candidateId) {
+      const detailResponse = await fetch(`${baseUrl}/api/candidates/${candidateId}`, { headers: authHeaders });
+      const detail = await detailResponse.json();
+      if (!detailResponse.ok) {
+        throw new Error(detail.error || `candidate detail check failed: ${detailResponse.status}`);
+      }
+      const patchResponse = await fetch(`${baseUrl}/api/candidates/${candidateId}/profile`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '13900000000' })
+      });
+      const patched = await patchResponse.json();
+      if (!patchResponse.ok) {
+        throw new Error(patched.error || `candidate partial profile patch failed: ${patchResponse.status}`);
+      }
+      if (detail.email && patched.email !== detail.email) {
+        throw new Error('candidate partial profile patch cleared an omitted email field');
+      }
+    }
+    const candidatesResponse = await fetch(`${baseUrl}/api/candidates`, { headers: authHeaders });
+    const candidates = await candidatesResponse.json();
+    if (!candidatesResponse.ok) {
+      throw new Error(candidates.error || `candidate privacy check failed: ${candidatesResponse.status}`);
+    }
+    const leaked = candidates.find((candidate) => candidate.email || candidate.phone || candidate.identityKey);
+    if (leaked) {
+      throw new Error(`candidate list privacy check failed: ${leaked.id || leaked.name || 'unknown candidate'}`);
+    }
     console.log(JSON.stringify(data, null, 2));
   } finally {
     if (dbBackup != null) {

@@ -160,9 +160,10 @@ AUTH_SESSION_DAYS=14
 BAILIAN_OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
 BAILIAN_API_KEY=你的服务端密钥
 BAILIAN_MODEL=qwen3.6-plus
+BAILIAN_TIMEOUT_MS=45000
 ```
 
-未配置 `BAILIAN_API_KEY` 时，平台会使用本地启发式规则完成筛选，便于验证流程。
+未配置 `BAILIAN_API_KEY` 时，平台会使用本地启发式规则完成筛选，便于验证流程。百炼接口超时或失败时也会自动回退本地评分。
 
 ### 2. 飞书多维表格表单
 

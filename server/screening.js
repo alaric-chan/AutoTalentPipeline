@@ -331,9 +331,13 @@ ${JSON.stringify(safeCandidate, null, 2)}
 简历文本：
 ${safeResumeText.slice(0, 18000)}`;
 
+  const timeoutMs = Math.max(1000, Number(config.bailian.timeoutMs || 45_000));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${config.bailian.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${config.bailian.apiKey}`,
         'Content-Type': 'application/json'
@@ -379,12 +383,15 @@ ${safeResumeText.slice(0, 18000)}`;
       raw_response_id: data.id || ''
     };
   } catch (error) {
+    const message = error.name === 'AbortError' ? `百炼接口超时（${timeoutMs}ms）` : error.message;
     return {
       ...fallback,
       risk_notes: normalizeScreeningRiskNotes(fallback.risk_notes, currentDateInfo.date),
       source: 'heuristic',
       privacy: { pii_redacted_before_model: true },
-      warning: `百炼筛选失败，已回退本地评分：${error.message}`
+      warning: `百炼筛选失败，已回退本地评分：${message}`
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

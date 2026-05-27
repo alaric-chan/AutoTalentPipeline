@@ -465,57 +465,77 @@ function updateField(fields, aliases, fallback, value) {
 }
 
 function buildProfilePatch(candidate, body = {}) {
+  const hasBodyField = (key) => Object.prototype.hasOwnProperty.call(body, key);
   const fields = { ...(candidate.application?.fields || {}) };
   const picked = { ...(candidate.application?.picked || {}) };
-  const name = cleanProfileText(body.name, 48);
-  const email = cleanProfileEmail(body.email);
-  const phone = cleanProfilePhone(body.phone);
-  const arrival = cleanProfileText(body.arrival, 80);
-  const duration = cleanProfileText(body.duration, 80);
-  const receivedAt = cleanProfileText(body.receivedAt, 80);
-  const degree = cleanProfileText(body.degree, 80);
-  const schoolBackground = cleanProfileText(body.schoolBackground, 160);
-  picked.name = updateField(fields, ['姓名', '名字', '候选人', '应聘者', 'Name'], picked.name || '姓名', name);
-  picked.email = updateField(fields, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'], picked.email || '联系邮箱', email);
-  picked.phone = updateField(fields, ['联系电话', '手机', '电话', '手机号', '联系方式'], picked.phone || '联系电话', phone);
-  updateField(fields, ['学历', '学位', '最高学历', 'Degree'], '学历', degree);
-  updateField(fields, ['院校背景', '教育背景', '学校背景'], '院校背景', schoolBackground);
-  updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', arrival);
-  updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', duration);
-  updateField(fields, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'], '投递时间', receivedAt);
-
   const nextCandidate = {
     ...candidate,
-    name,
-    email,
-    phone,
-    degree,
-    school: schoolBackground || candidate.school || '',
-    receivedAt,
     application: {
       ...(candidate.application || {}),
       fields,
       picked
     }
   };
-  return {
-    name,
-    email,
-    phone,
-    degree,
-    school: schoolBackground || candidate.school || '',
-    receivedAt,
-    application: nextCandidate.application,
-    identityKey: candidateIdentityKey(nextCandidate),
-    timeline: [
-      ...(candidate.timeline || []),
-      {
-        at: new Date().toISOString(),
-        action: '编辑候选人投递档案',
-        detail: [name, email, phone].filter(Boolean).join(' · ')
-      }
-    ]
-  };
+  const patch = {};
+  const detailParts = [];
+
+  if (hasBodyField('name')) {
+    const name = cleanProfileText(body.name, 48);
+    patch.name = name;
+    nextCandidate.name = name;
+    picked.name = updateField(fields, ['姓名', '名字', '候选人', '应聘者', 'Name'], picked.name || '姓名', name);
+    if (name) detailParts.push(name);
+  }
+  if (hasBodyField('email')) {
+    const email = cleanProfileEmail(body.email);
+    patch.email = email;
+    nextCandidate.email = email;
+    picked.email = updateField(fields, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'], picked.email || '联系邮箱', email);
+    if (email) detailParts.push(email);
+  }
+  if (hasBodyField('phone')) {
+    const phone = cleanProfilePhone(body.phone);
+    patch.phone = phone;
+    nextCandidate.phone = phone;
+    picked.phone = updateField(fields, ['联系电话', '手机', '电话', '手机号', '联系方式'], picked.phone || '联系电话', phone);
+    if (phone) detailParts.push(phone);
+  }
+  if (hasBodyField('degree')) {
+    const degree = cleanProfileText(body.degree, 80);
+    patch.degree = degree;
+    nextCandidate.degree = degree;
+    updateField(fields, ['学历', '学位', '最高学历', 'Degree'], '学历', degree);
+  }
+  if (hasBodyField('schoolBackground')) {
+    const schoolBackground = cleanProfileText(body.schoolBackground, 160);
+    patch.school = schoolBackground || candidate.school || '';
+    nextCandidate.school = patch.school;
+    updateField(fields, ['院校背景', '教育背景', '学校背景'], '院校背景', schoolBackground);
+  }
+  if (hasBodyField('arrival')) {
+    updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', cleanProfileText(body.arrival, 80));
+  }
+  if (hasBodyField('duration')) {
+    updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', cleanProfileText(body.duration, 80));
+  }
+  if (hasBodyField('receivedAt')) {
+    const receivedAt = cleanProfileText(body.receivedAt, 80);
+    patch.receivedAt = receivedAt;
+    nextCandidate.receivedAt = receivedAt;
+    updateField(fields, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'], '投递时间', receivedAt);
+  }
+
+  patch.application = nextCandidate.application;
+  patch.identityKey = candidateIdentityKey(nextCandidate);
+  patch.timeline = [
+    ...(candidate.timeline || []),
+    {
+      at: new Date().toISOString(),
+      action: '编辑候选人投递档案',
+      detail: detailParts.join(' · ')
+    }
+  ];
+  return patch;
 }
 
 function resumeContentType(file = {}) {
@@ -584,9 +604,7 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
 
   return {
     id: safe.id,
-    identityKey: safe.identityKey,
     name: safe.name,
-    phone: safe.phone,
     emailMasked: maskEmail(safe.email),
     phoneMasked: maskPhone(safe.phone),
     hasEmail: Boolean(safe.email),

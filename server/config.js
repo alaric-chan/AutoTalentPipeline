@@ -40,7 +40,8 @@ export const config = {
   bailian: {
     baseUrl: process.env.BAILIAN_OPENAI_BASE_URL || 'https://coding.dashscope.aliyuncs.com/v1',
     apiKey: process.env.BAILIAN_API_KEY || '',
-    model: process.env.BAILIAN_MODEL || 'qwen-plus'
+    model: process.env.BAILIAN_MODEL || 'qwen-plus',
+    timeoutMs: Number(process.env.BAILIAN_TIMEOUT_MS || 45_000)
   },
   lark: {
     cliPath: process.env.LARK_CLI_PATH || 'lark-cli',
@@ -104,7 +105,8 @@ export function publicConfigStatus() {
     bailian: {
       baseUrl: config.bailian.baseUrl,
       hasApiKey: Boolean(config.bailian.apiKey),
-      model: config.bailian.model
+      model: config.bailian.model,
+      timeoutMs: config.bailian.timeoutMs
     },
     lark: {
       profile: config.lark.profile,
