@@ -853,6 +853,10 @@ pre {
   padding: 2px 4px;
 }
 
+.stage-row span.new-badge {
+  color: #fff;
+}
+
 .stage-header {
   background: #f7f9fb;
   color: #627384;
@@ -2018,6 +2022,10 @@ pre {
   .candidate-pane[data-view="screening"] .stage-row span:nth-child(4)::before {
     content: "";
     display: none;
+  }
+
+  .candidate-pane[data-view="screening"] .stage-row span.new-badge {
+    color: #fff;
   }
 
   .candidate-pane[data-view="screening"] .stage-row span:nth-child(2) {
