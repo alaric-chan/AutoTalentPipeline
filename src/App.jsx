@@ -182,8 +182,8 @@ const stageMeta = {
   screening: {
     title: '简历筛选',
     description: '按 AI 分数、推荐结论和风险备注筛选候选人',
-    columns: ['姓名', '电话', 'AI分', '推荐'],
-    columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(54px, 0.68fr)'
+    columns: ['姓名', '电话', 'AI分', '状态'],
+    columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(58px, 0.72fr)'
   },
   schedule: {
     title: '面试安排',
@@ -740,6 +740,26 @@ function FieldValue({ value, fallback = '待补充' }) {
   return text;
 }
 
+function screeningListStatus(candidate) {
+  const decision = candidate?.manualReview?.decision;
+  if (decision === 'pass') return '已通过';
+  if (decision === 'reject') return '不通过';
+  if (!candidate?.screening) return '待筛';
+  return candidate.screening.recommendation || '待确认';
+}
+
+function statusTone(value) {
+  if (value === '已通过' || value === '强推' || value === '可面') return 'positive';
+  if (value === '不通过' || value === '不建议') return 'negative';
+  if (value === '待筛' || value === '待确认') return 'pending';
+  return 'neutral';
+}
+
+function ListStatusBadge({ value }) {
+  const label = value || '待确认';
+  return <span className={`list-status list-status-${statusTone(label)}`}>{label}</span>;
+}
+
 function latestInterviewRecord(candidate) {
   return candidate?.interviewRecords?.[0] || candidate?.interview?.lastRecord || null;
 }
@@ -803,7 +823,7 @@ function stageCells(candidate, view) {
     candidate.name || candidateEmail(candidate) || candidate.id,
     candidatePhone(candidate) || displayContact(candidate),
     candidate.screening?.score ?? '待筛',
-    candidate.screening?.recommendation || candidate.status || '待筛选'
+    <ListStatusBadge value={screeningListStatus(candidate)} />
   ];
 }
 
@@ -812,6 +832,13 @@ function reviewText(candidate) {
   if (decision === 'pass') return '已通过';
   if (decision === 'reject') return '不通过';
   return '待确认';
+}
+
+function nextCandidateIdAfterCurrent(candidates, currentId) {
+  const ids = candidates.map((candidate) => candidate.id).filter(Boolean);
+  const currentIndex = ids.indexOf(currentId);
+  if (currentIndex === -1) return ids[0] || '';
+  return ids[currentIndex + 1] || ids[currentIndex - 1] || '';
 }
 
 function escapeHtml(value = '') {
@@ -1016,6 +1043,8 @@ function App() {
         candidate.school,
         candidate.messageSubject,
         candidate.screening?.recommendation,
+        screeningListStatus(candidate),
+        reviewText(candidate),
         latestInterviewRecord(candidate)?.decision,
         applicationField(candidate, ['offer情况', '面试评价', '预计入职时间'])
       ]
@@ -1482,8 +1511,12 @@ function App() {
 
   async function reviewSelected(decision) {
     if (!selected) return;
+    const nextScreeningCandidateId =
+      decision === 'pass' && activeView === 'screening'
+        ? nextCandidateIdAfterCurrent(filteredCandidates, selected.id)
+        : '';
     const labels = {
-      pass: '通过并进入面试邀约',
+      pass: '通过简历',
       reject: '标记不通过',
       undo: '撤销人工判断'
     };
@@ -1495,8 +1528,8 @@ function App() {
       })
     );
     if (result?.id) {
-      setSelectedId(result.id);
-      if (decision === 'pass') setActiveView('schedule');
+      setSelectedId(nextScreeningCandidateId || result.id);
+      if (decision === 'pass') setActiveView('screening');
       if (decision === 'undo') setActiveView('screening');
     }
   }
@@ -2335,7 +2368,7 @@ function App() {
                           disabled={Boolean(busy) || selected.manualReview?.decision === 'pass'}
                         >
                           <CheckCircle2 size={16} />
-                          通过，进入面试邀请
+                          通过简历
                         </button>
                         <button
                           className="danger-button"

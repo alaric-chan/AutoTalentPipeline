@@ -804,6 +804,43 @@ pre {
   white-space: nowrap;
 }
 
+.list-status {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 750;
+  justify-content: center;
+  line-height: 1;
+  max-width: 100%;
+  min-height: 22px;
+  min-width: 48px;
+  overflow: hidden;
+  padding: 3px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-status-positive {
+  background: #dff5e8;
+  color: #126b38;
+}
+
+.list-status-pending {
+  background: #fff1cc;
+  color: #835b00;
+}
+
+.list-status-negative {
+  background: #ffe4df;
+  color: #9b2c1d;
+}
+
+.list-status-neutral {
+  background: #edf1f5;
+  color: #52616f;
+}
+
 .row-check {
   align-items: center;
   color: #202a33;
@@ -2042,18 +2079,15 @@ pre {
   }
 
   .candidate-pane[data-view="screening"] .stage-row span:nth-child(4) {
-    background: #edf7f2;
-    border: 1px solid #cae6d8;
-    border-radius: 999px;
-    color: #176047;
-    font-size: 12px;
-    font-weight: 750;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: inherit;
     grid-column: 2;
     grid-row: 2;
     justify-self: end;
     max-width: 112px;
-    min-height: 24px;
-    padding: 2px 8px;
+    padding: 0;
   }
 
   .name-cell {
