@@ -51,7 +51,12 @@ export const config = {
     viewId: process.env.LARK_VIEW_ID || '',
     formShareUrl: process.env.LARK_FORM_SHARE_URL || '',
     resumeField: process.env.LARK_RESUME_FIELD || '简历',
-    defaultLimit: Number(process.env.LARK_SYNC_LIMIT || 100)
+    defaultLimit: Number(process.env.LARK_SYNC_LIMIT || 100),
+    autoSync: {
+      enabled: process.env.LARK_AUTO_SYNC_ENABLED !== 'false',
+      intervalMinutes: Number(process.env.LARK_AUTO_SYNC_INTERVAL_MINUTES || 5),
+      limit: Number(process.env.LARK_AUTO_SYNC_LIMIT || process.env.LARK_SYNC_LIMIT || 100)
+    }
   },
   interviewSheet: {
     enabled: process.env.INTERVIEW_SHEET_ENABLED === 'true',
@@ -111,7 +116,10 @@ export function publicConfigStatus() {
       viewId: config.lark.viewId,
       formShareUrl: config.lark.formShareUrl,
       resumeField: config.lark.resumeField,
-      defaultLimit: config.lark.defaultLimit
+      defaultLimit: config.lark.defaultLimit,
+      autoSyncEnabled: config.lark.autoSync.enabled && Boolean(config.lark.baseToken),
+      autoSyncIntervalMinutes: config.lark.autoSync.intervalMinutes,
+      autoSyncLimit: config.lark.autoSync.limit
     },
     interviewSheet: {
       enabled: config.interviewSheet.enabled,

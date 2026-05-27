@@ -19,6 +19,8 @@ import {
   LayoutDashboard,
   ListChecks,
   Mail,
+  PanelLeftClose,
+  PanelLeftOpen,
   Phone,
   PlayCircle,
   RefreshCw,
@@ -44,6 +46,10 @@ const defaultUserDraft = {
 
 function storedAccessToken() {
   return window.localStorage?.getItem('leai_session_token') || window.localStorage?.getItem('leai_app_token') || '';
+}
+
+function storedNavCollapsed() {
+  return window.localStorage?.getItem('leai_nav_collapsed') === 'true';
 }
 
 function apiPath(path) {
@@ -575,6 +581,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: 'chenbk1', password: '' });
   const [activeView, setActiveView] = useState('screening');
+  const [navCollapsed, setNavCollapsed] = useState(() => storedNavCollapsed());
   const [openPanels, setOpenPanels] = useState({
     larkForm: true,
     larkAdvanced: false,
@@ -693,6 +700,10 @@ function App() {
   };
   const editableTemplate = templateDraft || interviewTemplate?.template || { subject: '', body: '' };
   const isAdmin = currentUser?.role === 'admin';
+  const showStatusBand = activeView === 'overview' || activeView === 'intake';
+  const larkSyncState = health?.larkSync || {};
+  const larkAutoSyncEnabled = Boolean(health?.config?.lark?.autoSyncEnabled);
+  const larkAutoSyncInterval = Number(health?.config?.lark?.autoSyncIntervalMinutes || 5);
 
   async function refresh() {
     const [nextHealth, nextCandidates, nextRuns, nextTemplate] = await Promise.all([
@@ -727,6 +738,14 @@ function App() {
 
   function togglePanel(key) {
     setOpenPanels((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  function toggleNavCollapsed() {
+    setNavCollapsed((current) => {
+      const next = !current;
+      window.localStorage?.setItem('leai_nav_collapsed', String(next));
+      return next;
+    });
   }
 
   async function selectCandidate(candidate) {
@@ -1186,24 +1205,6 @@ function App() {
     if (result?.payload) setPreview(result.payload);
   }
 
-  async function openOutlookMailInvite() {
-    if (!selected) return;
-    const mailWindow = openPendingWindow('正在打开 Outlook 邮件草稿');
-    const result = await runAction('打开 Outlook 邮件草稿', () =>
-      api(`/api/candidates/${selected.id}/interview/outlook-web-mail`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(interview)
-      })
-    );
-    if (result?.payload) {
-      setPreview(result.payload);
-      navigatePendingWindow(mailWindow, result.webMailUrl || result.payload.webMailUrl);
-    } else {
-      mailWindow?.close();
-    }
-  }
-
   async function openOfferMail() {
     if (!selected) return;
     const mailWindow = openPendingWindow('正在打开 Offer 邮件草稿');
@@ -1401,6 +1402,7 @@ function App() {
   }
 
   const outlookConnected = Boolean(health?.outlook?.connected);
+  const interviewScheduleDisabled = Boolean(busy) || !outlookConnected;
   const bailianReady = Boolean(health?.config?.bailian?.hasApiKey);
   const larkProfile = larkStatus?.profile || health?.config?.lark?.profile || larkConfig.profile;
   const larkBackendReady = Boolean(health?.config?.lark?.hasBaseToken && health?.config?.lark?.hasTableId);
@@ -1449,7 +1451,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`}>
       <aside className="side-nav">
         <div className="brand-block">
           <strong>乐享AI招聘</strong>
@@ -1520,9 +1522,19 @@ function App() {
 
       <section className="workbench">
         <header className="topbar">
-          <div>
-            <h1>乐享AI实习生招聘工作台</h1>
-            <p>飞书投递、AI 筛选、Outlook 日程邀请和 Teams 面试链接</p>
+          <div className="topbar-title">
+            <button
+              className="icon-button nav-toggle"
+              onClick={toggleNavCollapsed}
+              title={navCollapsed ? '显示左侧导航' : '隐藏左侧导航'}
+              aria-label={navCollapsed ? '显示左侧导航' : '隐藏左侧导航'}
+            >
+              {navCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+            <div>
+              <h1>乐享AI实习生招聘工作台</h1>
+              <p>飞书投递、AI 筛选、Outlook 日程邀请和 Teams 面试链接</p>
+            </div>
           </div>
           <div className="topbar-actions">
             <span className="current-user">
@@ -1540,13 +1552,15 @@ function App() {
           </div>
         </header>
 
-        <section className="status-band">
-          <Metric icon={<Inbox size={18} />} label="Outlook" value={outlookConnected ? '已连接' : '未连接'} />
-          <Metric icon={<ShieldCheck size={18} />} label="百炼" value={bailianReady ? '已配置' : '启发式'} />
-          <Metric icon={<Database size={18} />} label="飞书" value={larkProfile} />
-          <Metric icon={<Users size={18} />} label="候选人" value={candidates.length} />
-          <Metric icon={<CheckCircle2 size={18} />} label="已筛选" value={screenedCount} />
-        </section>
+        {showStatusBand ? (
+          <section className="status-band">
+            <Metric icon={<Inbox size={18} />} label="Outlook" value={outlookConnected ? '已连接' : '未连接'} />
+            <Metric icon={<ShieldCheck size={18} />} label="百炼" value={bailianReady ? '已配置' : '启发式'} />
+            <Metric icon={<Database size={18} />} label="飞书" value={larkProfile} />
+            <Metric icon={<Users size={18} />} label="候选人" value={candidates.length} />
+            <Metric icon={<CheckCircle2 size={18} />} label="已筛选" value={screenedCount} />
+          </section>
+        ) : null}
 
         {notice ? <div className="notice">{notice}</div> : null}
         {busy ? <div className="busy">{busy}中...</div> : null}
@@ -1604,7 +1618,22 @@ function App() {
                   <span> / 投递入口表 / {larkTableId}</span>
                 </dd>
                 <dt>同步方式</dt>
-                <dd>候选人提交后进入 Base 表，本地平台点击“同步表单投递”拉取最新记录。</dd>
+                <dd>
+                  {larkAutoSyncEnabled
+                    ? `服务器每 ${larkAutoSyncInterval} 分钟自动拉取一次；手动按钮用于立即刷新。`
+                    : '候选人提交后进入 Base 表，本地平台点击“同步表单投递”拉取最新记录。'}
+                </dd>
+                {larkSyncState.lastFinishedAt ? (
+                  <>
+                    <dt>最近同步</dt>
+                    <dd>
+                      {new Date(larkSyncState.lastFinishedAt).toLocaleString()}
+                      {larkSyncState.lastStatus === 'failed'
+                        ? ` · 失败：${larkSyncState.lastError}`
+                        : ` · ${larkSyncState.lastScanned || 0} 条`}
+                    </dd>
+                  </>
+                ) : null}
               </dl>
               <Collapsible
                 title="高级配置"
@@ -1747,8 +1776,21 @@ function App() {
           <section className="main-grid">
             <aside className="candidate-pane">
               <div className="pane-title">
-                <div>
-                  <h2>{stageMeta[activeView].title}</h2>
+                <div className="pane-title-main">
+                  <div className="pane-heading-row">
+                    <h2>{stageMeta[activeView].title}</h2>
+                    {activeView === 'screening' ? (
+                      <button
+                        className="compact-button"
+                        onClick={syncLark}
+                        disabled={Boolean(busy) || !larkCanSync}
+                        title="立即同步飞书表单投递"
+                      >
+                        <Inbox size={15} />
+                        同步表单投递
+                      </button>
+                    ) : null}
+                  </div>
                   <small>{stageMeta[activeView].description}</small>
                 </div>
                 <small>{filteredCandidates.length} / {stageCandidates.length}</small>
@@ -1940,7 +1982,11 @@ function App() {
                           <Mail size={16} />
                           面邀预览
                         </button>
-                        <button onClick={scheduleInterview} disabled={Boolean(busy)}>
+                        <button
+                          onClick={scheduleInterview}
+                          disabled={interviewScheduleDisabled}
+                          title={!outlookConnected ? 'Outlook 未连接，不能执行预定验证或真实创建。' : undefined}
+                        >
                           <CalendarPlus size={16} />
                           {interview.live ? 'Graph真实创建' : 'dry-run 预定'}
                         </button>
@@ -1954,10 +2000,6 @@ function App() {
                             已在Outlook发送
                           </button>
                         ) : null}
-                        <button onClick={openOutlookMailInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
-                          <Mail size={16} />
-                          面邀邮件草稿
-                        </button>
                         {selected.manualReview ? (
                           <button className="ghost-button" onClick={() => reviewSelected('undo')} disabled={Boolean(busy)}>
                             撤销通过
@@ -2122,12 +2164,6 @@ function App() {
                               <p className="export-note">
                                 <a href={preview.webCalendarUrl} target="_blank" rel="noreferrer">打开 Outlook 日程邀请页</a>
                                 <span>，确认 Teams 会议开关后点击发送。</span>
-                              </p>
-                            ) : null}
-                            {preview.webMailUrl ? (
-                              <p className="export-note">
-                                <a href={preview.webMailUrl} target="_blank" rel="noreferrer">打开 Outlook 邮件草稿</a>
-                                <span>，确认内容后点击发送。</span>
                               </p>
                             ) : null}
                             {selected.interview?.inviteStatus ? (

@@ -382,7 +382,7 @@ async function downloadResume({ baseToken, tableId, recordId, fields, resumeFiel
   }
   await runLark(args, { ...context, json: false });
   const downloaded = await fs.readdir(outputDir);
-  const supported = downloaded.find((name) => /\.(pdf|docx|txt|md)$/i.test(name)) || downloaded[0];
+  const supported = downloaded.find((name) => /\.(pdf|doc|docx|txt|md)$/i.test(name)) || downloaded[0];
   if (!supported) return null;
   const filePath = path.join(outputDir, supported);
   const stat = await fs.stat(filePath);
@@ -397,6 +397,9 @@ async function downloadResume({ baseToken, tableId, recordId, fields, resumeFiel
 export async function pullLarkCandidates(options = {}) {
   const context = larkContext(options);
   const resumeField = compact(options.resumeField || config.lark.resumeField);
+  const skipResumeDownloadRecordIds = new Set(
+    (options.skipResumeDownloadRecordIds || []).map((recordId) => String(recordId))
+  );
   const { baseToken, tableId, viewId, records } = await listLarkRecords({ ...options, ...context });
   const candidates = [];
 
@@ -409,14 +412,16 @@ export async function pullLarkCandidates(options = {}) {
         pickField(fields, options.fieldMap?.[key], aliases)
       ])
     );
-    const resumeFile = await downloadResume({
-      baseToken,
-      tableId,
-      recordId,
-      fields,
-      resumeField: options.fieldMap?.resume || resumeField,
-      context
-    });
+    const resumeFile = skipResumeDownloadRecordIds.has(String(recordId))
+      ? null
+      : await downloadResume({
+          baseToken,
+          tableId,
+          recordId,
+          fields,
+          resumeField: options.fieldMap?.resume || resumeField,
+          context
+        });
     const fallbackText = applicationSummary(fields, picked);
     const resumeText = resumeFile
       ? await extractResumeText(resumeFile.path, resumeFile.mimeType)

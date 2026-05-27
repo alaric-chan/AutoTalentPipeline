@@ -63,6 +63,16 @@ await fs.mkdir(paths.larkDownloads, { recursive: true });
 const app = express();
 const upload = multer({ dest: paths.uploads });
 const allowedResumeExtensions = new Set(['.pdf', '.doc', '.docx', '.txt', '.md']);
+let larkSyncState = {
+  running: false,
+  lastStartedAt: null,
+  lastFinishedAt: null,
+  lastStatus: 'idle',
+  lastError: '',
+  lastImported: 0,
+  lastScanned: 0,
+  trigger: ''
+};
 const hasBuiltFrontend = await fs
   .access(path.join(paths.dist, 'index.html'))
   .then(() => true)
@@ -243,6 +253,100 @@ async function findExistingCandidate(candidate) {
   if (!identityKey) return null;
   const candidates = await listCandidates();
   return candidates.find((item) => (item.identityKey || candidateIdentityKey(item)) === identityKey) || null;
+}
+
+function getLarkSyncState() {
+  return { ...larkSyncState };
+}
+
+async function syncLarkBaseCandidates(options = {}, { trigger = 'manual', mode = '' } = {}) {
+  if (larkSyncState.running) {
+    const error = new Error('飞书同步正在进行中，请稍后刷新。');
+    error.status = 409;
+    throw error;
+  }
+
+  const startedAt = new Date().toISOString();
+  larkSyncState = {
+    ...larkSyncState,
+    running: true,
+    lastStartedAt: startedAt,
+    lastStatus: 'running',
+    lastError: '',
+    trigger
+  };
+
+  try {
+    const existingCandidates = await listCandidates();
+    const existingByRecordId = new Map(
+      existingCandidates
+        .filter((candidate) => candidate.lark?.recordId)
+        .map((candidate) => [String(candidate.lark.recordId), candidate])
+    );
+    const skipResumeDownloadRecordIds = existingCandidates
+      .filter((candidate) => candidate.lark?.recordId && (candidate.resumeFile?.path || candidate.resumeText))
+      .map((candidate) => String(candidate.lark.recordId));
+    const result = await pullLarkCandidates({
+      ...options,
+      skipResumeDownloadRecordIds
+    });
+    const imported = [];
+
+    for (const candidate of result.candidates) {
+      const recordId = candidate.lark?.recordId ? String(candidate.lark.recordId) : '';
+      const existing = existingByRecordId.get(recordId) || await findExistingCandidate(candidate);
+      const isNewCandidate = !existing;
+      let saved = await upsertCandidate({
+        ...candidate,
+        status: existing?.status || candidate.status,
+        isNew: existing ? Boolean(existing.isNew) : true,
+        newAt: existing?.newAt || (isNewCandidate ? new Date().toISOString() : null),
+        viewedAt: existing?.viewedAt || null,
+        manualReview: existing?.manualReview || null,
+        screening: existing?.screening || candidate.screening || null,
+        resumeFile: candidate.resumeFile || existing?.resumeFile || null,
+        resumeText: candidate.resumeFile || !existing?.resumeText ? candidate.resumeText : existing.resumeText,
+        timeline: [
+          ...(existing?.timeline || []),
+          {
+            at: new Date().toISOString(),
+            action: trigger === 'auto' ? '服务器自动同步飞书投递记录' : '从飞书多维表格同步投递记录',
+            detail: candidate.lark?.recordId || candidate.email || candidate.name
+          }
+        ]
+      });
+      if (isNewCandidate && !saved.screening) {
+        saved = await autoScreenNewCandidate(saved);
+      }
+      imported.push(stripPrivateCandidate(saved));
+    }
+
+    await addVerificationRun({
+      type: trigger === 'auto' ? 'lark-base-auto-sync' : 'lark-base-sync',
+      status: 'passed',
+      detail: `飞书 Base 拉取 ${result.candidates.length} 条投递，导入/更新 ${imported.length} 位候选人`,
+      mode: mode || `${result.profile}/${result.as}/${trigger}`
+    });
+    larkSyncState = {
+      ...larkSyncState,
+      running: false,
+      lastFinishedAt: new Date().toISOString(),
+      lastStatus: 'passed',
+      lastError: '',
+      lastImported: imported.length,
+      lastScanned: result.candidates.length
+    };
+    return { ...result, candidates: undefined, imported };
+  } catch (error) {
+    larkSyncState = {
+      ...larkSyncState,
+      running: false,
+      lastFinishedAt: new Date().toISOString(),
+      lastStatus: 'failed',
+      lastError: error.message || '飞书同步失败'
+    };
+    throw error;
+  }
 }
 
 function reviewStatus(decision, fallback = '待人工确认') {
@@ -561,7 +665,8 @@ app.get('/api/health', asyncRoute(async (req, res) => {
     ok: true,
     now: new Date().toISOString(),
     config: publicConfigStatus(),
-    outlook: await getOutlookStatus()
+    outlook: await getOutlookStatus(),
+    larkSync: getLarkSyncState()
   });
 }));
 
@@ -685,41 +790,11 @@ app.post('/api/lark/fields', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/lark/sync', asyncRoute(async (req, res) => {
-  const result = await pullLarkCandidates(req.body || {});
-  const imported = [];
-  for (const candidate of result.candidates) {
-    const existing = await findExistingCandidate(candidate);
-    const isNewCandidate = !existing;
-    let saved = await upsertCandidate({
-      ...candidate,
-      status: existing?.status || candidate.status,
-      isNew: existing ? Boolean(existing.isNew) : true,
-      newAt: existing?.newAt || (isNewCandidate ? new Date().toISOString() : null),
-      viewedAt: existing?.viewedAt || null,
-      manualReview: existing?.manualReview || null,
-      screening: existing?.screening || candidate.screening || null,
-      resumeFile: candidate.resumeFile || existing?.resumeFile || null,
-      timeline: [
-        ...(existing?.timeline || []),
-        {
-          at: new Date().toISOString(),
-          action: '从飞书多维表格同步投递记录',
-          detail: candidate.lark?.recordId || candidate.email || candidate.name
-        }
-      ]
-    });
-    if (isNewCandidate && !saved.screening) {
-      saved = await autoScreenNewCandidate(saved);
-    }
-    imported.push(stripPrivateCandidate(saved));
-  }
-  await addVerificationRun({
-    type: 'lark-base-sync',
-    status: 'passed',
-    detail: `飞书 Base 拉取 ${result.candidates.length} 条投递，导入/更新 ${imported.length} 位候选人`,
-    mode: `${result.profile}/${result.as}`
+  const result = await syncLarkBaseCandidates(req.body || {}, {
+    trigger: 'manual',
+    mode: req.currentUser?.username || req.authMode
   });
-  res.json({ ...result, candidates: undefined, imported });
+  res.json({ ...result, syncState: getLarkSyncState() });
 }));
 
 app.post('/api/interview-sheet/sync', asyncRoute(async (req, res) => {
@@ -1403,6 +1478,29 @@ app.use((error, req, res, next) => {
   });
 });
 
+function startLarkAutoSync() {
+  if (!config.lark.autoSync.enabled || !config.lark.baseToken) return;
+  const intervalMinutes = Math.max(Number(config.lark.autoSync.intervalMinutes || 5), 1);
+  const intervalMs = intervalMinutes * 60 * 1000;
+  const run = async () => {
+    if (larkSyncState.running) return;
+    try {
+      await syncLarkBaseCandidates(
+        { limit: config.lark.autoSync.limit },
+        { trigger: 'auto', mode: `server-auto/${intervalMinutes}m` }
+      );
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] 飞书自动同步失败：${error.message}`);
+    }
+  };
+  const initialDelay = Math.min(30_000, intervalMs);
+  const firstTimer = setTimeout(run, initialDelay);
+  firstTimer.unref?.();
+  const interval = setInterval(run, intervalMs);
+  interval.unref?.();
+}
+
 app.listen(config.port, config.host, () => {
   console.log(`LeAI Recruiting Platform: ${config.appBaseUrl}`);
+  startLarkAutoSync();
 });

@@ -89,6 +89,25 @@ pre {
   display: grid;
   grid-template-columns: 212px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.nav-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app-shell.nav-collapsed .side-nav {
+  gap: 0;
+  min-height: 0;
+  min-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+  pointer-events: none;
+  width: 0;
 }
 
 .side-nav {
@@ -101,6 +120,7 @@ pre {
   padding: 18px 14px;
   position: sticky;
   top: 0;
+  transition: opacity 160ms ease, padding 160ms ease, width 160ms ease;
 }
 
 .brand-block {
@@ -216,6 +236,23 @@ pre {
   gap: 16px;
   justify-content: space-between;
   margin-bottom: 18px;
+}
+
+.topbar-title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-title > div {
+  min-width: 0;
+}
+
+.nav-toggle {
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding: 8px;
 }
 
 .topbar h1 {
@@ -536,6 +573,22 @@ pre {
 
 .pane-title > div {
   min-width: 0;
+}
+
+.pane-title-main {
+  display: grid;
+  gap: 4px;
+}
+
+.pane-heading-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pane-heading-row .compact-button {
+  margin-bottom: 0;
 }
 
 .pane-title h2,
