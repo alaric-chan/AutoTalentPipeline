@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
   AlertTriangle,
   CalendarPlus,
@@ -404,9 +403,14 @@ function listFromValue(value) {
 }
 
 function splitEvidenceText(value) {
-  return cleanFieldValue(value)
-    .split(/\n+|(?=\d+[.、]\s*)/)
-    .map((item) => item.replace(/^\d+[.、]\s*/, '').trim())
+  const text = cleanFieldValue(value).replace(/\r\n?/g, '\n');
+  const normalized = text
+    .replace(/([；;。.!?？])\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/g, '$1\n$2')
+    .replace(/^\s*((?:\d{1,2}|[一二三四五六七八九十]+)[.、)）]\s*)/gm, '$1');
+  return normalized
+    .split(/\n+|[；;]/)
+    .map((item) => item.replace(/^\d+[.、)）]\s*/, '').trim())
+    .map((item) => item.replace(/^[一二三四五六七八九十]+[.、)）]\s*/, '').trim())
     .filter(Boolean);
 }
 
@@ -699,8 +703,6 @@ function App() {
     mimeType: '',
     name: ''
   });
-  const [pdfPreviewState, setPdfPreviewState] = useState({ loading: false, error: '' });
-  const resumeCanvasRef = useRef(null);
   const [detailLoadingId, setDetailLoadingId] = useState('');
   const [users, setUsers] = useState([]);
   const [userDraft, setUserDraft] = useState(defaultUserDraft);
@@ -863,49 +865,6 @@ function App() {
     selected?.resumeFile?.originalName,
     selected?.resumeFile?.size
   ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const file = selected?.resumeFile ? { ...selected.resumeFile, mimeType: resumePreview.mimeType } : null;
-    const canvas = resumeCanvasRef.current;
-
-    if (!resumePreview.url || !file || fileKind(file) !== 'pdf' || !canvas) {
-      setPdfPreviewState({ loading: false, error: '' });
-      return;
-    }
-
-    setPdfPreviewState({ loading: true, error: '' });
-    import('pdfjs-dist')
-      .then((pdfjsLib) => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        return pdfjsLib.getDocument(resumePreview.url).promise;
-      })
-      .then(async (pdf) => {
-        if (cancelled) return;
-        const page = await pdf.getPage(1);
-        if (cancelled) return;
-        const baseViewport = page.getViewport({ scale: 1 });
-        const containerWidth = canvas.parentElement?.clientWidth || baseViewport.width;
-        const scale = Math.min(1.7, Math.max(0.72, (containerWidth - 28) / baseViewport.width));
-        const viewport = page.getViewport({ scale });
-        const ratio = window.devicePixelRatio || 1;
-        const context = canvas.getContext('2d');
-        canvas.width = Math.floor(viewport.width * ratio);
-        canvas.height = Math.floor(viewport.height * ratio);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        await page.render({ canvasContext: context, viewport }).promise;
-        if (!cancelled) setPdfPreviewState({ loading: false, error: '' });
-      })
-      .catch((error) => {
-        if (!cancelled) setPdfPreviewState({ loading: false, error: error.message });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [resumePreview.mimeType, resumePreview.url, selected?.resumeFile]);
 
   useEffect(() => {
     if (!selectedId || !security || (security.authRequired && !security.authenticated)) return;
@@ -2719,10 +2678,12 @@ function App() {
                         {resumePreview.loading ? <p className="muted">原文件加载中...</p> : null}
                         {resumePreview.error ? <p className="muted">{resumePreview.error}</p> : null}
                         {resumePreview.url && fileKind({ ...selected.resumeFile, mimeType: resumePreview.mimeType }) === 'pdf' ? (
-                          <div className="pdf-preview-wrap">
-                            {pdfPreviewState.loading ? <span className="preview-loading">正在渲染第一页...</span> : null}
-                            {pdfPreviewState.error ? <span className="preview-error">{pdfPreviewState.error}</span> : null}
-                            <canvas ref={resumeCanvasRef} className="pdf-canvas" />
+                          <div className="resume-frame-wrap resume-pdf-frame-wrap">
+                            <iframe
+                              className="resume-frame"
+                              src={`${resumePreview.url}#view=FitH`}
+                              title={`${selected.resumeFile.originalName || '简历'}预览`}
+                            />
                           </div>
                         ) : null}
                         {resumePreview.url && fileKind({ ...selected.resumeFile, mimeType: resumePreview.mimeType }) === 'text' ? (
