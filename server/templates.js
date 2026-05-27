@@ -84,6 +84,32 @@ export function buildInterviewEmail({ candidate, interview, template }) {
   };
 }
 
+export function buildInterviewConfirmationEmail({ candidate, interview, confirmationUrl }) {
+  const values = buildInterviewContext({ candidate, interview });
+  const subject = `请确认联想${values.position}面试时间-${values.name}`;
+  const bodyText = `Hi ${values.name}，
+
+感谢投递联想${values.position}岗位。我们为你预留了以下面试时间，请点击链接确认是否参加。
+
+面试时间：${values.timeText}
+面试方式：${values.location}
+
+确认链接：
+${confirmationUrl}
+
+如果这个时间不方便，也可以在页面里选择“申请改期”并留下可面时间。收到你的确认后，我们会再发送正式 Outlook/Teams 日程邀请。
+
+Best wishes
+${values.contactName}
+${values.contactPhone || values.contactEmail}`.trim();
+
+  return {
+    subject,
+    bodyText,
+    bodyHtml: bodyTextToHtml(bodyText)
+  };
+}
+
 export function buildOfferEmail({ candidate, offer = {} }) {
   const name = candidate.name || candidate.screening?.candidate_name || '同学';
   const contactName = offer.owner || candidate.offer?.owner || config.recruiting.contactName;

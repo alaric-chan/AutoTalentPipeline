@@ -40,6 +40,8 @@ import {
 } from './graphService.js';
 import {
   buildCalendarEvent,
+  buildInterviewConfirmationEmail,
+  buildInterviewContext,
   buildInterviewEmail,
   buildOfferEmail,
   buildOutlookWebCalendarUrl,
@@ -130,6 +132,10 @@ function hashSessionToken(token) {
 
 function createSessionToken() {
   return crypto.randomBytes(32).toString('base64url');
+}
+
+function createConfirmationToken() {
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 function sanitizeUser(user) {
@@ -352,9 +358,61 @@ async function syncLarkBaseCandidates(options = {}, { trigger = 'manual', mode =
 }
 
 function reviewStatus(decision, fallback = '待人工确认') {
-  if (decision === 'pass') return '待邀约';
+  if (decision === 'pass') return '待安排时间';
   if (decision === 'reject') return '不通过';
   return fallback;
+}
+
+function normalizedAppBaseUrl() {
+  return String(config.appBaseUrl || '').replace(/\/+$/, '');
+}
+
+function confirmationUrlForToken(token) {
+  return `${normalizedAppBaseUrl()}/#/confirm/${encodeURIComponent(token)}`;
+}
+
+function confirmationStatusText(status = '') {
+  const value = String(status || '');
+  if (value === 'confirmed') return '已确认参加';
+  if (value === 'reschedule_requested') return '申请改期';
+  if (value === 'declined') return '暂不参加';
+  if (value === 'mail-draft-generated') return '确认邮件待发送';
+  if (value === 'pending') return '等待确认';
+  return '待确认';
+}
+
+async function findCandidateByConfirmationToken(token) {
+  const value = String(token || '').trim();
+  if (!value) return null;
+  const candidates = await listCandidates();
+  return candidates.find((candidate) => candidate.interview?.confirmation?.token === value) || null;
+}
+
+function publicInterviewConfirmation(candidate) {
+  const interview = candidate.interview || {};
+  const confirmation = interview.confirmation || {};
+  const safeInterview = {
+    ...interview,
+    start: interview.start || new Date().toISOString()
+  };
+  const context = buildInterviewContext({ candidate, interview: safeInterview });
+  return {
+    token: confirmation.token || '',
+    status: confirmation.status || 'pending',
+    statusText: confirmationStatusText(confirmation.status || 'pending'),
+    response: confirmation.response || '',
+    submittedAt: confirmation.respondedAt || '',
+    note: confirmation.note || '',
+    candidateName: context.name,
+    position: config.recruiting.position,
+    timeText: context.timeText,
+    start: interview.start || '',
+    end: interview.end || '',
+    locationOrLink: interview.locationOrLink || '',
+    contactName: context.contactName,
+    contactPhone: context.contactPhone,
+    contactEmail: context.contactEmail
+  };
 }
 
 function maskEmail(value = '') {
@@ -635,6 +693,80 @@ app.post('/api/security/login', (req, res) => {
     })
   });
 });
+
+app.get('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
+  const candidate = await findCandidateByConfirmationToken(req.params.token);
+  if (!candidate) {
+    res.status(404).json({ error: '确认链接不存在或已失效。' });
+    return;
+  }
+  res.json(publicInterviewConfirmation(candidate));
+}));
+
+app.post('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
+  const candidate = await findCandidateByConfirmationToken(req.params.token);
+  if (!candidate) {
+    res.status(404).json({ error: '确认链接不存在或已失效。' });
+    return;
+  }
+  const response = String(req.body?.response || '').trim();
+  if (!['confirm', 'reschedule', 'decline'].includes(response)) {
+    const error = new Error('请选择确认参加、申请改期或暂不参加。');
+    error.status = 400;
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const note = String(req.body?.note || '').trim().slice(0, 800);
+  const nextConfirmationStatus =
+    response === 'confirm'
+      ? 'confirmed'
+      : response === 'reschedule'
+        ? 'reschedule_requested'
+        : 'declined';
+  const nextCandidateStatus =
+    response === 'confirm'
+      ? '候选人已确认'
+      : response === 'reschedule'
+        ? '待重新安排'
+        : '候选人放弃';
+  const updated = await patchCandidate(candidate.id, {
+    status: nextCandidateStatus,
+    interview: {
+      ...(candidate.interview || {}),
+      confirmation: {
+        ...(candidate.interview?.confirmation || {}),
+        status: nextConfirmationStatus,
+        response,
+        note,
+        respondedAt: now
+      },
+      actions: [
+        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation'),
+        { type: 'candidate-confirmation', status: nextConfirmationStatus, at: now }
+      ]
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: now,
+        action:
+          response === 'confirm'
+            ? '候选人确认参加面试'
+            : response === 'reschedule'
+              ? '候选人申请改期'
+              : '候选人暂不参加',
+        detail: note
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'candidate-interview-confirmation',
+    status: response === 'confirm' ? 'passed' : 'pending',
+    detail: `${updated.name || updated.email || updated.id}：${confirmationStatusText(nextConfirmationStatus)}`,
+    mode: 'public-confirmation'
+  });
+  res.json(publicInterviewConfirmation(updated));
+}));
 
 app.use('/api', asyncRoute(async (req, res, next) => {
   if (
@@ -1151,6 +1283,119 @@ app.post('/api/candidates/:id/interview/preview', asyncRoute(async (req, res) =>
   res.json(await interviewPayload(candidate, req.body));
 }));
 
+app.post('/api/candidates/:id/interview/confirmation-mail', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  if (!candidate.email) {
+    const error = new Error('候选人缺少邮箱，无法打开确认邮件草稿。');
+    error.status = 400;
+    throw error;
+  }
+  const payload = await interviewPayload(candidate, req.body);
+  const token = createConfirmationToken();
+  const confirmationUrl = confirmationUrlForToken(token);
+  const email = buildInterviewConfirmationEmail({
+    candidate,
+    interview: payload.interview,
+    confirmationUrl
+  });
+  const webMailUrl = buildOutlookWebMailUrl({ email, candidate });
+  const generatedAt = new Date().toISOString();
+  const updated = await patchCandidate(candidate.id, {
+    status: '确认邮件待发送',
+    interview: {
+      ...(candidate.interview || {}),
+      ...payload.interview,
+      subject: payload.email.subject,
+      confirmation: {
+        token,
+        url: confirmationUrl,
+        status: 'mail-draft-generated',
+        createdAt: generatedAt,
+        sentAt: '',
+        respondedAt: '',
+        response: '',
+        note: ''
+      },
+      confirmationMail: {
+        subject: email.subject,
+        webMailUrl,
+        generatedAt
+      },
+      actions: [
+        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation-mail'),
+        { type: 'candidate-confirmation-mail', status: 'draft-generated', at: generatedAt }
+      ]
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: generatedAt,
+        action: '已生成候选人面试确认邮件',
+        detail: email.subject
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'candidate-confirmation-mail',
+    status: 'pending',
+    detail: `${updated.name || updated.email || updated.id}：已生成面试确认邮件草稿`,
+    mode: 'outlook-web-mail-compose'
+  });
+  res.json({
+    candidate: stripPrivateCandidate(updated, { detail: true }),
+    payload: {
+      interview: payload.interview,
+      email,
+      webMailUrl,
+      confirmationUrl,
+      confirmationStatus: 'mail-draft-generated'
+    },
+    webMailUrl,
+    confirmationUrl
+  });
+}));
+
+app.post('/api/candidates/:id/interview/confirmation-mail-sent', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  const confirmation = candidate.interview?.confirmation;
+  if (!confirmation?.token) {
+    const error = new Error('请先生成候选人确认邮件。');
+    error.status = 400;
+    throw error;
+  }
+  const sentAt = new Date().toISOString();
+  const updated = await patchCandidate(candidate.id, {
+    status: '等待候选人确认',
+    interview: {
+      ...(candidate.interview || {}),
+      confirmation: {
+        ...confirmation,
+        status: 'pending',
+        sentAt
+      },
+      actions: [
+        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation-mail-sent'),
+        { type: 'candidate-confirmation-mail-sent', status: 'confirmed-by-user', at: sentAt }
+      ]
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: sentAt,
+        action: '已确认面试确认邮件发送',
+        detail: req.body?.note || '用户已在 Outlook Web 点击发送'
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'candidate-confirmation-mail-sent',
+    status: 'pending',
+    detail: `${updated.name || updated.email || updated.id}：等待候选人确认面试时间`,
+    mode: 'manual-confirmation'
+  });
+  res.json(stripPrivateCandidate(updated, { detail: true }));
+}));
+
 app.post('/api/candidates/:id/interview/schedule', asyncRoute(async (req, res) => {
   const candidate = requireCandidate(await getCandidate(req.params.id));
   const payload = await interviewPayload(candidate, req.body);
@@ -1190,6 +1435,7 @@ app.post('/api/candidates/:id/interview/schedule', asyncRoute(async (req, res) =
   const updated = await patchCandidate(candidate.id, {
     status: live ? '已预约面试' : '面试待确认',
     interview: {
+      ...(candidate.interview || {}),
       ...payload.interview,
       subject: payload.email.subject,
       live,
@@ -1229,6 +1475,7 @@ app.post('/api/candidates/:id/interview/export', asyncRoute(async (req, res) => 
   const updated = await patchCandidate(candidate.id, {
     status: '面邀包已生成',
     interview: {
+      ...(candidate.interview || {}),
       ...payload.interview,
       artifacts
     },
@@ -1256,6 +1503,7 @@ app.post('/api/candidates/:id/interview/outlook-web-calendar', asyncRoute(async 
   const updated = await patchCandidate(candidate.id, {
     status: 'Outlook日程待发送',
     interview: {
+      ...(candidate.interview || {}),
       ...payload.interview,
       webCalendarUrl: payload.webCalendarUrl,
       subject: payload.email.subject,

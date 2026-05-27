@@ -54,6 +54,11 @@ function storedNavCollapsed() {
   return window.localStorage?.getItem('leai_nav_collapsed') === 'true';
 }
 
+function currentConfirmationToken() {
+  const match = window.location.hash.match(/^#\/confirm\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 function apiPath(path) {
   return path.startsWith('/api/') ? `.${path}` : path;
 }
@@ -187,7 +192,7 @@ const stageMeta = {
   },
   schedule: {
     title: '面试安排',
-    description: '生成 Outlook 日程邀请，自动带候选人邮箱和面试信息',
+    description: '先发时间确认邮件，候选人确认后再发 Outlook/Teams 日程',
     columns: ['姓名', '联系方式', '面试时间', '状态']
   },
   interview: {
@@ -748,10 +753,40 @@ function screeningListStatus(candidate) {
   return candidate.screening.recommendation || '待确认';
 }
 
+function confirmationStatusLabel(status = '') {
+  const value = String(status || '');
+  if (value === 'confirmed') return '候选人已确认';
+  if (value === 'reschedule_requested') return '申请改期';
+  if (value === 'declined') return '暂不参加';
+  if (value === 'mail-draft-generated') return '确认邮件待发送';
+  if (value === 'pending') return '等待候选人确认';
+  return '待发送确认邮件';
+}
+
+function formalCalendarReady(candidate) {
+  const confirmationStatus = candidate?.interview?.confirmation?.status;
+  return (
+    confirmationStatus === 'confirmed' ||
+    ['web-link-generated', 'web-sent-confirmed', 'graph-sent'].includes(candidate?.interview?.inviteStatus)
+  );
+}
+
 function statusTone(value) {
-  if (value === '已通过' || value === '强推' || value === '可面') return 'positive';
-  if (value === '不通过' || value === '不建议') return 'negative';
-  if (value === '待筛' || value === '待确认') return 'pending';
+  if (['已通过', '强推', '可面', '候选人已确认', '已预约面试', '已确认发送'].includes(value)) return 'positive';
+  if (['不通过', '不建议', '候选人放弃', '暂不参加'].includes(value)) return 'negative';
+  if (
+    [
+      '待筛',
+      '待确认',
+      '待安排时间',
+      '待发送确认邮件',
+      '确认邮件待发送',
+      '等待候选人确认',
+      '待重新安排',
+      '申请改期',
+      'Outlook日程待发送'
+    ].includes(value)
+  ) return 'pending';
   return 'neutral';
 }
 
@@ -800,7 +835,7 @@ function stageCells(candidate, view) {
       candidate.name || candidateEmail(candidate) || candidate.id,
       displayContact(candidate),
       candidate.interview?.start ? formatDateTime(candidate.interview.start) : applicationField(candidate, ['面试时间']) || '待安排',
-      candidate.status || '待处理'
+      <ListStatusBadge value={candidate.status || confirmationStatusLabel(candidate.interview?.confirmation?.status)} />
     ];
   }
   if (view === 'interview') {
@@ -944,6 +979,123 @@ function Metric({ icon, label, value }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function InterviewConfirmationPage({ token }) {
+  const [data, setData] = useState(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  async function loadConfirmation() {
+    setError('');
+    try {
+      setData(await api(`/api/interview-confirmations/${encodeURIComponent(token)}`));
+    } catch (loadError) {
+      setError(loadError.message);
+    }
+  }
+
+  useEffect(() => {
+    loadConfirmation();
+  }, [token]);
+
+  async function submit(response) {
+    setBusy(response);
+    setError('');
+    try {
+      const result = await api(`/api/interview-confirmations/${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response, note })
+      });
+      setData(result);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  const isDone = ['confirmed', 'reschedule_requested', 'declined'].includes(data?.status);
+
+  return (
+    <main className="public-confirm-shell">
+      <section className="public-confirm-panel">
+        <div className="public-confirm-brand">
+          <span>乐享AI招聘</span>
+          <strong>面试时间确认</strong>
+        </div>
+        {error ? (
+          <div className="confirm-error">
+            <AlertTriangle size={18} />
+            <span>{error}</span>
+          </div>
+        ) : null}
+        {!data && !error ? <p className="muted">正在读取面试安排...</p> : null}
+        {data ? (
+          <>
+            <div className="confirm-hero">
+              <StatusPill value={data.statusText} />
+              <h1>{data.candidateName}，请确认面试时间</h1>
+              <p>确认后，我们会再发送正式 Outlook/Teams 日程邀请。</p>
+            </div>
+            <dl className="confirm-info">
+              <dt>岗位</dt>
+              <dd>{data.position}</dd>
+              <dt>面试时间</dt>
+              <dd>{data.timeText}</dd>
+              <dt>面试方式</dt>
+              <dd>{data.locationOrLink || '线上面试'}</dd>
+              <dt>联系人</dt>
+              <dd>
+                {data.contactName}
+                {data.contactPhone ? ` · ${data.contactPhone}` : ''}
+              </dd>
+            </dl>
+            {isDone ? (
+              <div className="confirm-result">
+                <CheckCircle2 size={22} />
+                <div>
+                  <strong>{data.statusText}</strong>
+                  <span>
+                    {data.status === 'confirmed'
+                      ? '感谢确认，请留意后续正式日程邮件。'
+                      : data.status === 'reschedule_requested'
+                        ? '我们已收到改期申请，会尽快重新协调时间。'
+                        : '已收到反馈，感谢你的告知。'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="confirm-note">
+                  备注或可面时间
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="如果需要改期，可以写下你方便的时间段。"
+                  />
+                </label>
+                <div className="confirm-actions">
+                  <button onClick={() => submit('confirm')} disabled={Boolean(busy)}>
+                    <CheckCircle2 size={16} />
+                    确认参加
+                  </button>
+                  <button className="ghost-button" onClick={() => submit('reschedule')} disabled={Boolean(busy)}>
+                    申请改期
+                  </button>
+                  <button className="danger-button" onClick={() => submit('decline')} disabled={Boolean(busy)}>
+                    暂不参加
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        ) : null}
+      </section>
+    </main>
   );
 }
 
@@ -1599,6 +1751,36 @@ function App() {
     if (result?.payload) setPreview(result.payload);
   }
 
+  async function openInterviewConfirmationMail() {
+    if (!selected) return;
+    const mailWindow = openPendingWindow('正在打开面试确认邮件草稿');
+    const result = await runAction('打开面试确认邮件草稿', () =>
+      api(`/api/candidates/${selected.id}/interview/confirmation-mail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(interview)
+      })
+    );
+    if (result?.payload) {
+      setPreview(result.payload);
+      navigatePendingWindow(mailWindow, result.webMailUrl || result.payload.webMailUrl);
+    } else {
+      mailWindow?.close();
+    }
+  }
+
+  async function confirmInterviewConfirmationMailSent() {
+    if (!selected) return;
+    const result = await runAction('确认面试确认邮件已发送', () =>
+      api(`/api/candidates/${selected.id}/interview/confirmation-mail-sent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: '已在 Outlook Web 点击发送' })
+      })
+    );
+    if (result?.id) setSelectedId(result.id);
+  }
+
   async function openOfferMail() {
     if (!selected) return;
     const mailWindow = openPendingWindow('正在打开 Offer 邮件草稿');
@@ -1666,14 +1848,16 @@ function App() {
   }
 
   function selectCurrentPageForBatch() {
-    const selectableIds = pagedCandidates.filter(candidateHasEmail).map((candidate) => candidate.id);
+    const selectableIds = pagedCandidates
+      .filter((candidate) => candidateHasEmail(candidate) && formalCalendarReady(candidate))
+      .map((candidate) => candidate.id);
     setBatchSelection((current) => Array.from(new Set([...current, ...selectableIds])));
   }
 
   async function bulkOpenOutlookCalendarInvites() {
-    const targets = selectedBatchCandidates.filter(candidateHasEmail);
+    const targets = selectedBatchCandidates.filter((candidate) => candidateHasEmail(candidate) && formalCalendarReady(candidate));
     if (!targets.length) {
-      setNotice('请先勾选有邮箱的候选人。');
+      setNotice('请先勾选已确认面试时间且有邮箱的候选人。');
       return;
     }
     const calendarHub = openPendingWindow('正在生成批量 Outlook 日程邀请链接');
@@ -1740,9 +1924,9 @@ function App() {
     ].join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      setNotice('面邀内容已复制，可粘贴到 Outlook 新邮件后发送。');
+      setNotice('邮件内容已复制，可粘贴到 Outlook 新邮件后发送。');
     } catch {
-      setNotice('复制失败，请直接从面邀预览区复制正文。');
+      setNotice('复制失败，请直接从预览区复制正文。');
     }
   }
 
@@ -1796,7 +1980,8 @@ function App() {
   }
 
   const outlookConnected = Boolean(health?.outlook?.connected);
-  const interviewScheduleDisabled = Boolean(busy) || !outlookConnected;
+  const formalCalendarDisabled = Boolean(busy) || !candidateHasEmail(selected) || !formalCalendarReady(selected);
+  const interviewScheduleDisabled = Boolean(busy) || !outlookConnected || (interview.live && !formalCalendarReady(selected));
   const bailianReady = Boolean(health?.config?.bailian?.hasApiKey);
   const larkProfile = larkStatus?.profile || health?.config?.lark?.profile || larkConfig.profile;
   const larkBackendReady = Boolean(health?.config?.lark?.hasBaseToken && health?.config?.lark?.hasTableId);
@@ -2296,7 +2481,7 @@ function App() {
                                 <input
                                   type="checkbox"
                                   checked={batchSelection.includes(candidate.id)}
-                                  disabled={!candidateHasEmail(candidate)}
+                                  disabled={!candidateHasEmail(candidate) || !formalCalendarReady(candidate)}
                                   onChange={(event) => toggleBatchCandidate(candidate.id, event.target.checked)}
                                 />
                                 <strong className="name-cell">
@@ -2397,12 +2582,38 @@ function App() {
                         <button
                           onClick={scheduleInterview}
                           disabled={interviewScheduleDisabled}
-                          title={!outlookConnected ? 'Outlook 未连接，不能执行预定验证或真实创建。' : undefined}
+                          title={
+                            !outlookConnected
+                              ? 'Outlook 未连接，不能执行预定验证或真实创建。'
+                              : interview.live && !formalCalendarReady(selected)
+                                ? '候选人确认面试时间后，再执行真实创建。'
+                                : undefined
+                          }
                         >
                           <CalendarPlus size={16} />
                           {interview.live ? 'Graph真实创建' : 'dry-run 预定'}
                         </button>
-                        <button onClick={openOutlookCalendarInvite} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                        <button onClick={openInterviewConfirmationMail} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                          <Mail size={16} />
+                          发送确认邮件
+                        </button>
+                        {selected.interview?.confirmation?.status === 'mail-draft-generated' ? (
+                          <button className="ghost-button" onClick={confirmInterviewConfirmationMailSent} disabled={Boolean(busy)}>
+                            <CheckCircle2 size={16} />
+                            已发确认邮件
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={openOutlookCalendarInvite}
+                          disabled={formalCalendarDisabled}
+                          title={
+                            !candidateHasEmail(selected)
+                              ? '候选人缺少邮箱。'
+                              : !formalCalendarReady(selected)
+                                ? '候选人确认面试时间后，再发送正式 Outlook/Teams 日程。'
+                                : undefined
+                          }
+                        >
                           <CalendarPlus size={16} />
                           Outlook日程邀请
                         </button>
@@ -2565,9 +2776,26 @@ function App() {
                             <strong>{preview.email.subject}</strong>
                             <button className="ghost-button compact-button" onClick={copyInterviewDraft}>
                               <Copy size={16} />
-                              复制面邀内容
+                              复制邮件内容
                             </button>
                             <pre>{preview.email.bodyText}</pre>
+                            {preview.confirmationUrl || selected.interview?.confirmation ? (
+                              <div className="confirmation-summary">
+                                <div>
+                                  <span>候选人确认</span>
+                                  <strong>
+                                    {preview.confirmationUrl
+                                      ? '确认邮件待发送'
+                                      : confirmationStatusLabel(selected.interview?.confirmation?.status)}
+                                  </strong>
+                                </div>
+                                {preview.confirmationUrl || selected.interview?.confirmation?.url ? (
+                                  <a href={preview.confirmationUrl || selected.interview.confirmation.url} target="_blank" rel="noreferrer">
+                                    打开确认页
+                                  </a>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {preview.webCalendarUrl ? (
                               <p className="export-note">
                                 <a href={preview.webCalendarUrl} target="_blank" rel="noreferrer">打开 Outlook 日程邀请页</a>
@@ -3225,4 +3453,9 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function Root() {
+  const confirmationToken = currentConfirmationToken();
+  return confirmationToken ? <InterviewConfirmationPage token={confirmationToken} /> : <App />;
+}
+
+createRoot(document.getElementById('root')).render(<Root />);
