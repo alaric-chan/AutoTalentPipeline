@@ -816,7 +816,7 @@ function buildScreeningSummaryMarkdown(screening) {
     .join('\n');
 }
 
-function questionSnippet(value, maxLength = 78) {
+function questionSnippet(value, maxLength = 54) {
   const text = cleanFieldValue(value).replace(/\s+/g, ' ');
   if (!text) return '';
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
@@ -875,26 +875,40 @@ function buildInterviewQuestionGroups(candidate) {
 
 function AIInterviewQuestionsPanel({ candidate }) {
   const groups = buildInterviewQuestionGroups(candidate);
+  const [activeTitle, setActiveTitle] = useState(groups[0]?.title || '');
+  const activeGroup = groups.find((group) => group.title === activeTitle) || groups[0];
   return (
-    <section className="panel wide-panel interview-question-panel">
+    <section className="panel interview-question-panel">
       <div className="panel-heading">
         <div>
           <h3>AI推荐面试问题</h3>
-          <p className="muted">围绕项目真实性、项目理解、JD能力和可靠度追问。</p>
+          <p className="muted">选择一个方向，边面边追问。</p>
         </div>
         {candidate?.screening ? <StatusPill value={displayMatchLevel(candidate.screening.recommendation, candidate.screening.score)} /> : null}
       </div>
-      <div className="interview-question-grid">
+      <div className="question-filter" role="tablist" aria-label="面试问题方向">
         {groups.map((group) => (
-          <article key={group.title}>
-            <h4>{group.title}</h4>
+          <button
+            key={group.title}
+            className={group.title === activeGroup.title ? 'active' : ''}
+            onClick={() => setActiveTitle(group.title)}
+            type="button"
+          >
+            {group.title}
+          </button>
+        ))}
+      </div>
+      <div className="interview-question-scroll">
+        <article className="interview-question-card">
+          <h4>{activeGroup.title}</h4>
+          <div className="question-list">
             <ol>
-              {group.questions.map((question, index) => (
-                <li key={`${group.title}-${index}`}>{question}</li>
+              {activeGroup.questions.map((question, index) => (
+                <li key={`${activeGroup.title}-${index}`}>{question}</li>
               ))}
             </ol>
-          </article>
-        ))}
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -3378,7 +3392,7 @@ function App() {
                         </div>
                       </section>
                       <AIInterviewQuestionsPanel candidate={selected} />
-                      <section className="panel">
+                      <section className="panel wide-panel">
                         <h3>历史记录</h3>
                         {selected.interviewRecords?.length ? (
                           <div className="record-list">

@@ -1699,13 +1699,34 @@ pre {
   margin: 3px 0 0;
 }
 
-.interview-question-grid {
+.question-filter {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
 }
 
-.interview-question-grid article {
+.question-filter button {
+  background: #f7f9fb;
+  border: 1px solid #d8e0e8;
+  color: #31475c;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.question-filter button.active {
+  background: #17324d;
+  border-color: #17324d;
+  color: #fff;
+}
+
+.interview-question-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.interview-question-card {
   background: #fbfcfd;
   border: 1px solid #e4eaf0;
   border-radius: 6px;
@@ -1714,19 +1735,19 @@ pre {
   padding: 10px;
 }
 
-.interview-question-grid h4 {
+.interview-question-card h4 {
   font-size: 13px;
   margin: 0;
 }
 
-.interview-question-grid ol {
+.question-list ol {
   display: grid;
-  gap: 7px;
+  gap: 9px;
   margin: 0;
   padding-left: 18px;
 }
 
-.interview-question-grid li {
+.question-list li {
   line-height: 1.5;
 }
 
@@ -2039,8 +2060,7 @@ pre {
   .detail-columns,
   .screening-layout,
   .screening-context-grid,
-  .confirmation-detail-grid,
-  .interview-question-grid {
+  .confirmation-detail-grid {
     grid-template-columns: 1fr;
   }
 
