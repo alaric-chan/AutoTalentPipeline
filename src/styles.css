@@ -1113,6 +1113,51 @@ pre {
   padding: 10px 12px;
 }
 
+.screening-action-bar {
+  align-items: center;
+  background: #fff;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.screening-action-button {
+  border-radius: 6px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
+.screening-pass-button:disabled {
+  background: #aab3bc;
+  border-color: #aab3bc;
+  color: #fff;
+  opacity: 1;
+}
+
+.screening-reject-button {
+  background: #9b2c1d;
+  border-color: #9b2c1d;
+}
+
+.screening-undo-button {
+  background: #fff;
+  border-color: #cbd5df;
+  color: #1f2f3f;
+}
+
+.screening-ai-button {
+  background: #fff;
+  border-color: #c7d7e4;
+  color: #17324d;
+}
+
+.screening-ai-button:hover,
+.screening-undo-button:hover {
+  background: #f7f9fb;
+}
+
 .actions-row.bare {
   border: 0;
   padding: 0;

@@ -3004,10 +3004,11 @@ function App() {
                     <StatusPill value={activeView === 'schedule' ? candidateScheduleStatus(selected) : selected.status} />
                   </div>
 
-                  <div className="actions-row">
+                  <div className={`actions-row ${activeView === 'screening' ? 'screening-action-bar' : ''}`}>
                     {activeView === 'screening' ? (
                       <>
                         <button
+                          className="screening-action-button screening-pass-button"
                           onClick={() => reviewSelected('pass')}
                           disabled={Boolean(busy) || selected.manualReview?.decision === 'pass'}
                         >
@@ -3015,20 +3016,31 @@ function App() {
                           通过简历
                         </button>
                         <button
-                          className="danger-button"
+                          className="danger-button screening-action-button screening-reject-button"
                           onClick={() => reviewSelected('reject')}
                           disabled={Boolean(busy) || selected.manualReview?.decision === 'reject'}
                         >
+                          <AlertTriangle size={16} />
                           不通过
                         </button>
                         {selected.manualReview ? (
-                          <button className="ghost-button" onClick={() => reviewSelected('undo')} disabled={Boolean(busy)}>
+                          <button
+                            className="ghost-button screening-action-button screening-undo-button"
+                            onClick={() => reviewSelected('undo')}
+                            disabled={Boolean(busy)}
+                          >
+                            <RefreshCw size={16} />
                             撤销判断
                           </button>
                         ) : null}
-                        <button className="ghost-button" onClick={screenSelected} disabled={Boolean(busy)}>
+                        <button
+                          className="ghost-button screening-action-button screening-ai-button"
+                          onClick={screenSelected}
+                          disabled={Boolean(busy)}
+                          title={selected.screening ? '重新进行AI简历评估' : '补跑AI简历评估'}
+                        >
                           <FileSearch size={16} />
-                          {selected.screening ? '重跑匹配评估' : '补跑匹配评估'}
+                          AI简历评估
                         </button>
                       </>
                     ) : null}
