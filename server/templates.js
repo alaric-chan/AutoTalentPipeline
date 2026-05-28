@@ -147,8 +147,15 @@ function formatOutlookWebDateTime(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
 }
 
+function outlookDeepLinkQuery(params) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+}
+
 export function buildOutlookWebCalendarUrl({ event, interview, email, candidate }) {
-  const params = new URLSearchParams({
+  const params = {
     path: '/calendar/action/compose',
     rru: 'addevent',
     subject: event.subject,
@@ -158,20 +165,20 @@ export function buildOutlookWebCalendarUrl({ event, interview, email, candidate 
     body: email.bodyText,
     allday: 'false',
     online: '1'
-  });
+  };
   if (candidate?.email) {
-    params.set('to', candidate.email);
+    params.to = candidate.email;
   }
-  return `https://outlook.office.com/calendar/deeplink/compose?${params.toString()}`;
+  return `https://outlook.office.com/calendar/deeplink/compose?${outlookDeepLinkQuery(params)}`;
 }
 
 export function buildOutlookWebMailUrl({ email, candidate }) {
-  const params = new URLSearchParams({
+  const params = {
     to: candidate?.email || '',
     subject: email.subject,
     body: email.bodyText
-  });
-  return `https://outlook.office.com/mail/deeplink/compose?${params.toString()}`;
+  };
+  return `https://outlook.office.com/mail/deeplink/compose?${outlookDeepLinkQuery(params)}`;
 }
 
 export function buildCalendarEvent({ candidate, interview, emailBodyHtml }) {

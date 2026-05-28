@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { extractResumeProfile } from '../server/resumeParser.js';
 import { mergeCandidateForUpsert } from '../server/store.js';
+import { buildOutlookWebCalendarUrl, buildOutlookWebMailUrl } from '../server/templates.js';
 
 const port = process.env.PORT || 4317;
 const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
@@ -161,6 +162,35 @@ function assertManualProfileOverrideMerge() {
   }
 }
 
+function assertOutlookDeepLinkEncoding() {
+  const email = {
+    subject: '请确认联想AI产品经理实习生面试时间-王萌',
+    bodyText: [
+      'Hi 王萌，',
+      '',
+      '面试方式：Teams 线上会议',
+      'Best wishes'
+    ].join('\n')
+  };
+  const candidate = { email: 'wm@example.com' };
+  const mailUrl = buildOutlookWebMailUrl({ email, candidate });
+  const calendarUrl = buildOutlookWebCalendarUrl({
+    event: { subject: '面试：王萌', location: { displayName: 'Teams 线上会议' } },
+    interview: { start: '2026-06-03T14:30', end: '2026-06-03T15:00', locationOrLink: 'Teams 线上会议' },
+    email,
+    candidate
+  });
+  for (const url of [mailUrl, calendarUrl]) {
+    if (url.includes('+')) {
+      throw new Error(`Outlook deeplink should encode spaces as %20 instead of +: ${url}`);
+    }
+    const body = new URL(url).searchParams.get('body') || '';
+    if (!body.includes('Hi 王萌') || !body.includes('Teams 线上会议') || body.includes('Hi+')) {
+      throw new Error(`Outlook deeplink body decoding failed: ${body}`);
+    }
+  }
+}
+
 async function waitForServer() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10_000) {
@@ -176,6 +206,7 @@ async function main() {
   try {
     assertResumeProfileParsing();
     assertManualProfileOverrideMerge();
+    assertOutlookDeepLinkEncoding();
     if (process.env.SELF_TEST_RESTORE !== 'false') {
       dbBackup = await fs.readFile(dbPath, 'utf8').catch(() => null);
     }
