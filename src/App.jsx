@@ -3033,15 +3033,6 @@ function App() {
                             撤销判断
                           </button>
                         ) : null}
-                        <button
-                          className="ghost-button screening-action-button screening-ai-button"
-                          onClick={screenSelected}
-                          disabled={Boolean(busy)}
-                          title={selected.screening ? '重新进行AI简历评估' : '补跑AI简历评估'}
-                        >
-                          <FileSearch size={16} />
-                          AI简历评估
-                        </button>
                       </>
                     ) : null}
                     {activeView === 'schedule' ? (
@@ -3183,7 +3174,21 @@ function App() {
                         </div>
                       </section>
                       <section className="panel evidence-panel">
-                        <h3>岗位匹配分析</h3>
+                        <div className="panel-heading">
+                          <h3>岗位匹配分析</h3>
+                          <div className="panel-heading-actions">
+                            <button
+                              className="ghost-button compact-button screening-ai-button"
+                              onClick={screenSelected}
+                              disabled={Boolean(busy)}
+                              title={selected.screening ? '重新进行AI简历评估' : '补跑AI简历评估'}
+                              type="button"
+                            >
+                              <FileSearch size={15} />
+                              AI简历评估
+                            </button>
+                          </div>
+                        </div>
                         {selected.screening ? (
                           <div className="screening">
                             <div className="score-line">
