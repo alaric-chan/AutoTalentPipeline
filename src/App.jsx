@@ -489,7 +489,74 @@ function isWeekday(date) {
   return day >= 1 && day <= 5;
 }
 
-function buildInterviewTimeOptions() {
+function rangeFromInterviewStart(startValue, durationValue = defaultInterviewDurationMinutes) {
+  const start = toDatetimeLocalValue(startValue);
+  if (!start) return null;
+  const durationMinutes = durationMinutesFromValue(durationValue);
+  const startDate = new Date(start);
+  const endDate = new Date(resolveInterviewEnd(start, durationMinutes));
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) return null;
+  return {
+    start,
+    end: toDatetimeLocal(endDate),
+    startMs: startDate.getTime(),
+    endMs: endDate.getTime()
+  };
+}
+
+function rangesOverlap(left, right) {
+  return left.startMs < right.endMs && right.startMs < left.endMs;
+}
+
+function durationMinutesFromValue(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const text = String(value || '').trim();
+  const hourMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:小时|h)/i);
+  if (hourMatch) return Math.round(Number(hourMatch[1]) * 60);
+  const minuteMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:分钟|mins?|m)?/i);
+  if (minuteMatch) return Math.round(Number(minuteMatch[1]));
+  return defaultInterviewDurationMinutes;
+}
+
+function candidateReservingInterviewSlot(candidate) {
+  if (!candidate?.interview?.start) return false;
+  const confirmationStatus = candidate.interview?.confirmation?.status;
+  if (['declined', 'reschedule_requested'].includes(confirmationStatus)) return false;
+  if (['候选人放弃', '暂不参加', '待重新安排', '申请改期'].includes(candidate?.status)) return false;
+  return true;
+}
+
+function occupiedInterviewRanges(candidates = [], currentCandidateId = '') {
+  const ranges = [];
+  const pushRange = (startValue, durationValue) => {
+    const range = rangeFromInterviewStart(startValue, durationValue);
+    if (range) ranges.push(range);
+  };
+
+  candidates.forEach((candidate) => {
+    if (!candidate || candidate.id === currentCandidateId) return;
+    if (candidateReservingInterviewSlot(candidate)) {
+      pushRange(
+        candidate.interview.start,
+        candidate.interview.end
+          ? Math.round((new Date(candidate.interview.end).getTime() - new Date(candidate.interview.start).getTime()) / 60000)
+          : candidate.interview.durationMinutes
+      );
+    }
+    (candidate.interviewRecords || []).forEach((record) => pushRange(record.interviewTime, record.durationMinutes || record.duration));
+    if (candidate.interviewRecord?.interviewTime) {
+      pushRange(candidate.interviewRecord.interviewTime, candidate.interviewRecord.duration);
+    }
+    if (candidate.interviewRecord || ['已预约面试', '面试记录', 'Offer跟进'].includes(candidateScheduleStatus(candidate))) {
+      pushRange(applicationField(candidate, ['面试时间']));
+    }
+  });
+
+  return ranges;
+}
+
+function buildInterviewTimeOptions(candidates = [], currentCandidateId = '') {
   const slotTimes = [
     { hour: 10, minute: 30 },
     { hour: 11, minute: 0 },
@@ -497,6 +564,7 @@ function buildInterviewTimeOptions() {
     { hour: 15, minute: 0 },
     { hour: 15, minute: 30 }
   ];
+  const occupiedRanges = occupiedInterviewRanges(candidates, currentCandidateId);
   const options = [];
   const now = new Date();
   const earliest = new Date(now.getTime() + 30 * 60 * 1000);
@@ -510,6 +578,8 @@ function buildInterviewTimeOptions() {
       startDate.setHours(slot.hour, slot.minute, 0, 0);
       if (startDate <= earliest) continue;
       const start = toDatetimeLocal(startDate);
+      const optionRange = rangeFromInterviewStart(start, defaultInterviewDurationMinutes);
+      if (optionRange && occupiedRanges.some((occupiedRange) => rangesOverlap(optionRange, occupiedRange))) continue;
       options.push({
         value: `slot-${options.length}`,
         start,
@@ -1565,7 +1635,7 @@ function App() {
     [candidates, selectedId]
   );
 
-  const interviewTimeOptions = useMemo(() => buildInterviewTimeOptions(), []);
+  const interviewTimeOptions = useMemo(() => buildInterviewTimeOptions(candidates, selected?.id), [candidates, selected?.id]);
   const stageCandidates = useMemo(
     () => sortCandidatesForStage(filterCandidatesByStage(candidates, activeView), activeView),
     [activeView, candidates]
