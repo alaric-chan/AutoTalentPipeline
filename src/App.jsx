@@ -437,7 +437,26 @@ function candidateSubmittedSortValue(candidate) {
   return Number.isNaN(fallback.getTime()) ? 0 : fallback.getTime();
 }
 
+function candidateScheduleSortValue(candidate) {
+  const stableDate =
+    candidate?.manualReview?.decidedAt ||
+    candidate?.newAt ||
+    candidate?.receivedAt ||
+    candidate?.createdAt ||
+    '';
+  const date = new Date(dateTimeValue(stableDate));
+  if (!Number.isNaN(date.getTime())) return date.getTime();
+  return candidateSubmittedSortValue(candidate);
+}
+
 function sortCandidatesForStage(candidates, view) {
+  if (view === 'schedule') {
+    return [...candidates].sort((a, b) => {
+      const dateDiff = candidateScheduleSortValue(b) - candidateScheduleSortValue(a);
+      if (dateDiff) return dateDiff;
+      return String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''), 'zh-Hans-CN');
+    });
+  }
   if (view !== 'screening') return candidates;
   return [...candidates].sort((a, b) => candidateSubmittedSortValue(b) - candidateSubmittedSortValue(a));
 }
@@ -733,6 +752,77 @@ function buildScreeningSummaryMarkdown(screening) {
     .filter(([, value]) => meaningfulValue(value))
     .map(([label, value]) => `- **${label}**：${cleanFieldValue(value)}`)
     .join('\n');
+}
+
+function ScreeningInsightPanel({ candidate }) {
+  const screening = candidate?.screening;
+  const tags = listFromValue(screening?.llm_knowledge);
+  return (
+    <section className="panel wide-panel screening-context-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>AI筛选回顾</h3>
+          <p className="muted">邀约前快速回忆候选人的匹配点、风险和追问方向。</p>
+        </div>
+        {screening ? <StatusPill value={displayMatchLevel(screening.recommendation, screening.score)} /> : null}
+      </div>
+      {screening ? (
+        <div className="screening-context-grid">
+          <div className="screening">
+            <div className="score-line">
+              <Score value={screening.score} />
+              <span className="source-text">
+                {screening.source || candidate?.source || 'manual'}
+                {screening.warning ? ` · ${screening.warning}` : ''}
+              </span>
+            </div>
+            <MarkdownContent value={buildScreeningSummaryMarkdown(screening)} />
+            <div className="keyword-chips">
+              {tags.length ? tags.map((item, index) => <span key={`${item}-${index}`}>{item}</span>) : <span>待确认</span>}
+            </div>
+          </div>
+          <div className="screening-risk">
+            <strong>风险与追问</strong>
+            {screening.risk_notes ? (
+              <MarkdownContent value={normalizeRiskNotesMarkdown(screening.risk_notes)} />
+            ) : (
+              <p className="muted">暂无风险备注。</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="muted">尚未生成 AI 筛选评价，可回到简历筛选页补跑匹配评估。</p>
+      )}
+    </section>
+  );
+}
+
+function ConfirmationStatusPanel({ candidate }) {
+  const confirmation = candidate?.interview?.confirmation;
+  if (!confirmation?.url) return null;
+  return (
+    <section className="panel wide-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>候选人确认状态</h3>
+          <p className="muted">从候选人视角打开同一个确认页，核对是否已同意、改期或放弃。</p>
+        </div>
+        <StatusPill value={confirmationStatusLabel(confirmation.status)} />
+      </div>
+      <div className="confirmation-summary persistent-confirmation">
+        <div>
+          <span>确认链接</span>
+          <strong>{confirmationStatusLabel(confirmation.status)}</strong>
+          {confirmation.respondedAt ? <small>{formatProfileDateTime(confirmation.respondedAt)}</small> : null}
+          {confirmation.note ? <p>{confirmation.note}</p> : null}
+        </div>
+        <a className="button-link ghost-button" href={confirmation.url} target="_blank" rel="noreferrer">
+          <ExternalLink size={16} />
+          打开确认页
+        </a>
+      </div>
+    </section>
+  );
 }
 
 function candidateProfileItems(candidate) {
@@ -2647,6 +2737,17 @@ function App() {
                             已发确认邮件
                           </button>
                         ) : null}
+                        {selected.interview?.confirmation?.url ? (
+                          <a
+                            className="button-link ghost-button"
+                            href={selected.interview.confirmation.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <ExternalLink size={16} />
+                            查看确认页
+                          </a>
+                        ) : null}
                         <button
                           onClick={openOutlookCalendarInvite}
                           disabled={formalCalendarDisabled}
@@ -2886,6 +2987,10 @@ function App() {
                           <p className="muted">先选择面试时间，再生成预览、dry-run 或 Outlook 日程邀请。</p>
                         )}
                       </section>
+
+                      <ConfirmationStatusPanel candidate={selected} />
+
+                      <ScreeningInsightPanel candidate={selected} />
 
                       <section className="panel wide-panel">
                         <h3>面邀模板</h3>
