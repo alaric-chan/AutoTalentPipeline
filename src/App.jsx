@@ -5,6 +5,7 @@ import {
   CalendarPlus,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Database,
@@ -1675,6 +1676,8 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
   const page = Math.min(candidatePage, totalPages);
   const pagedCandidates = filteredCandidates.slice((page - 1) * pageSize, page * pageSize);
+  const selectedFilteredIndex = selected ? filteredCandidates.findIndex((candidate) => candidate.id === selected.id) : -1;
+  const hasCandidateSwitcher = candidateStageViews.includes(activeView) && selectedFilteredIndex >= 0 && filteredCandidates.length > 1;
   const selectedBatchCandidates = useMemo(
     () => candidates.filter((candidate) => batchSelection.includes(candidate.id)),
     [batchSelection, candidates]
@@ -1738,9 +1741,17 @@ function App() {
     });
   }
 
-  async function selectCandidate(candidate) {
+  function scrollDetailIntoViewOnMobile() {
+    if (!window.matchMedia?.('(max-width: 760px)').matches) return;
+    window.requestAnimationFrame(() => {
+      document.querySelector('.detail-pane')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  async function selectCandidate(candidate, options = {}) {
     setSelectedId(candidate.id);
     setPreview(null);
+    if (options.focusDetail) scrollDetailIntoViewOnMobile();
     if (!candidate.isNew) return;
     try {
       const updated = await api(`/api/candidates/${candidate.id}/viewed`, { method: 'POST' });
@@ -1748,6 +1759,14 @@ function App() {
     } catch (error) {
       setNotice(error.message);
     }
+  }
+
+  function selectCandidateByOffset(offset) {
+    const nextIndex = selectedFilteredIndex + offset;
+    const nextCandidate = filteredCandidates[nextIndex];
+    if (!nextCandidate) return;
+    setCandidatePage(Math.floor(nextIndex / pageSize) + 1);
+    selectCandidate(nextCandidate, { focusDetail: true });
   }
 
   useEffect(() => {
@@ -2144,7 +2163,7 @@ function App() {
   async function reviewSelected(decision) {
     if (!selected) return;
     const nextScreeningCandidateId =
-      decision === 'pass' && activeView === 'screening'
+      (decision === 'pass' || decision === 'reject') && activeView === 'screening'
         ? nextCandidateIdAfterCurrent(filteredCandidates, selected.id)
         : '';
     const labels = {
@@ -2161,7 +2180,10 @@ function App() {
     );
     if (result?.id) {
       setSelectedId(nextScreeningCandidateId || result.id);
+      const nextIndex = filteredCandidates.findIndex((candidate) => candidate.id === nextScreeningCandidateId);
+      if (nextIndex >= 0) setCandidatePage(Math.floor(nextIndex / pageSize) + 1);
       if (decision === 'pass') setActiveView('screening');
+      if (decision === 'reject') setActiveView('screening');
       if (decision === 'undo') setActiveView('screening');
     }
   }
@@ -2995,9 +3017,12 @@ function App() {
                         }}
                         role="button"
                         tabIndex={0}
-                        onClick={() => selectCandidate(candidate)}
+                        onClick={() => selectCandidate(candidate, { focusDetail: true })}
                         onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') selectCandidate(candidate);
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            selectCandidate(candidate, { focusDetail: true });
+                          }
                         }}
                       >
                         {stageCells(candidate, activeView).map((cell, index) => (
@@ -3075,6 +3100,32 @@ function App() {
                   </div>
 
                   <div className={`actions-row ${activeView === 'screening' ? 'screening-action-bar' : ''}`}>
+                    {hasCandidateSwitcher ? (
+                      <div className="mobile-candidate-switcher">
+                        <button
+                          className="ghost-button"
+                          onClick={() => selectCandidateByOffset(-1)}
+                          disabled={selectedFilteredIndex <= 0}
+                          type="button"
+                        >
+                          <ChevronLeft size={16} />
+                          上一位
+                        </button>
+                        <span>
+                          <strong>{selected.name || candidateEmail(selected) || selected.id}</strong>
+                          <small>{selectedFilteredIndex + 1} / {filteredCandidates.length}</small>
+                        </span>
+                        <button
+                          className="ghost-button"
+                          onClick={() => selectCandidateByOffset(1)}
+                          disabled={selectedFilteredIndex >= filteredCandidates.length - 1}
+                          type="button"
+                        >
+                          下一位
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    ) : null}
                     {activeView === 'screening' ? (
                       <>
                         <button

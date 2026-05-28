@@ -83,9 +83,18 @@ textarea {
   border: 1px solid #cbd5df;
   border-radius: 6px;
   color: #202a33;
+  max-width: 100%;
   min-height: 32px;
   padding: 6px 9px;
   width: 100%;
+}
+
+input[type="datetime-local"] {
+  display: block;
+  inline-size: 100%;
+  line-height: normal;
+  max-inline-size: 100%;
+  min-inline-size: 0;
 }
 
 textarea {
@@ -1163,6 +1172,10 @@ pre {
   padding: 0;
 }
 
+.mobile-candidate-switcher {
+  display: none;
+}
+
 .detail-columns {
   display: grid;
   gap: 10px;
@@ -1543,6 +1556,13 @@ pre {
   display: grid;
   gap: 6px;
   font-size: 13px;
+  min-width: 0;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  min-width: 0;
 }
 
 .readonly-input {
@@ -2242,7 +2262,7 @@ pre {
     background:
       linear-gradient(180deg, #f6f9fb 0, #eef4f2 260px),
       #eef4f2;
-    padding: 12px 10px calc(92px + env(safe-area-inset-bottom));
+    padding: 12px 10px calc(132px + env(safe-area-inset-bottom));
   }
 
   .topbar,
@@ -2397,6 +2417,10 @@ pre {
 
   .candidate-list {
     background: #f5f8fa;
+    max-height: min(34vh, 310px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .stage-table {
@@ -2523,22 +2547,88 @@ pre {
     gap: 8px;
   }
 
+  .detail-pane {
+    scroll-margin-top: 110px;
+  }
+
   .actions-row {
     background: rgba(255, 255, 255, 0.97);
     border-bottom: 1px solid #d8e0e8;
     border-top: 1px solid #eef2f5;
     bottom: 0;
+    max-height: min(42vh, 360px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
     position: sticky;
     z-index: 10;
   }
 
-  .actions-row button {
+  .actions-row button,
+  .actions-row .button-link {
     flex: 1 1 148px;
+  }
+
+  .actions-row .button-link {
+    min-height: 42px;
+  }
+
+  .mobile-candidate-switcher {
+    align-items: center;
+    background: #f7fafb;
+    border: 1px solid #dce5ec;
+    border-radius: 8px;
+    display: grid;
+    flex: 1 0 100%;
+    gap: 8px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 8px;
+    width: 100%;
+  }
+
+  .mobile-candidate-switcher button {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 6px 9px;
+  }
+
+  .mobile-candidate-switcher > span {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .mobile-candidate-switcher strong {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-candidate-switcher small {
+    color: #627384;
+    font-size: 12px;
   }
 
   .actions-row.bare {
     position: static;
+  }
+
+  input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    font-size: 16px;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    text-align: left;
+  }
+
+  input[type="datetime-local"]::-webkit-date-and-time-value {
+    margin: 0;
+    min-width: 0;
+    text-align: left;
   }
 
   .detail-columns {
