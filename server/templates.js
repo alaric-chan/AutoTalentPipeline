@@ -162,7 +162,7 @@ export function buildOutlookWebCalendarUrl({ event, interview, email, candidate 
     startdt: formatOutlookWebDateTime(interview.start),
     enddt: formatOutlookWebDateTime(interview.end),
     location: event.location?.displayName || interview.locationOrLink || '线上面试',
-    body: email.bodyText,
+    body: email.bodyHtml || bodyTextToHtml(email.bodyText),
     allday: 'false',
     online: '1'
   };

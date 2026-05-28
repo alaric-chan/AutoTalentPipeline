@@ -170,7 +170,8 @@ function assertOutlookDeepLinkEncoding() {
       '',
       '面试方式：Teams 线上会议',
       'Best wishes'
-    ].join('\n')
+    ].join('\n'),
+    bodyHtml: '<p>Hi 王萌，</p>\n<p>面试方式：Teams 线上会议<br/>Best wishes</p>'
   };
   const candidate = { email: 'wm@example.com' };
   const mailUrl = buildOutlookWebMailUrl({ email, candidate });
@@ -188,6 +189,14 @@ function assertOutlookDeepLinkEncoding() {
     if (!body.includes('Hi 王萌') || !body.includes('Teams 线上会议') || body.includes('Hi+')) {
       throw new Error(`Outlook deeplink body decoding failed: ${body}`);
     }
+  }
+  const mailBody = new URL(mailUrl).searchParams.get('body') || '';
+  const calendarBody = new URL(calendarUrl).searchParams.get('body') || '';
+  if (mailBody.includes('<p>') || !mailBody.includes('\n')) {
+    throw new Error('Outlook mail deeplink should keep plain text line breaks');
+  }
+  if (!calendarBody.includes('<p>Hi 王萌') || !calendarBody.includes('<br/>Best wishes')) {
+    throw new Error(`Outlook calendar deeplink should use HTML to preserve rich-text line breaks: ${calendarBody}`);
   }
 }
 
