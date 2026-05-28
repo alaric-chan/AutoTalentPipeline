@@ -1170,6 +1170,28 @@ pre {
   min-width: 0;
 }
 
+.panel-heading-actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.panel-heading-actions .compact-button {
+  margin-bottom: 0;
+}
+
+.inline-warning {
+  background: #fff7e6;
+  border: 1px solid #f5d48a;
+  border-radius: 6px;
+  color: #7a5300;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  padding: 7px 9px;
+}
+
 .full {
   margin: 0 12px 12px;
 }

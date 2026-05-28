@@ -26,6 +26,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Sparkles,
   Upload,
   Users
 } from 'lucide-react';
@@ -823,6 +824,15 @@ function questionSnippet(value, maxLength = 54) {
 }
 
 function buildInterviewQuestionGroups(candidate) {
+  const generatedGroups = candidate?.interview?.questionGroups;
+  if (Array.isArray(generatedGroups) && generatedGroups.some((group) => group?.questions?.length)) {
+    return generatedGroups
+      .map((group) => ({
+        title: cleanFieldValue(group.title) || 'AI出题',
+        questions: listFromValue(group.questions).filter(Boolean)
+      }))
+      .filter((group) => group.questions.length);
+  }
   const screening = candidate?.screening || {};
   const projectSignal = questionSnippet(screening.project_match || screening.ai_experience_summary);
   const internshipSignal = questionSnippet(screening.internship_match || screening.product_experience);
@@ -873,19 +883,38 @@ function buildInterviewQuestionGroups(candidate) {
   ];
 }
 
-function AIInterviewQuestionsPanel({ candidate }) {
+function AIInterviewQuestionsPanel({ candidate, busy, onGenerate }) {
   const groups = buildInterviewQuestionGroups(candidate);
   const [activeTitle, setActiveTitle] = useState(groups[0]?.title || '');
+  const groupKey = groups.map((group) => group.title).join('|');
+  useEffect(() => {
+    if (!groups.some((group) => group.title === activeTitle)) {
+      setActiveTitle(groups[0]?.title || '');
+    }
+  }, [activeTitle, groupKey, groups]);
   const activeGroup = groups.find((group) => group.title === activeTitle) || groups[0];
+  const generatedAt = candidate?.interview?.questionGeneratedAt;
+  const source = candidate?.interview?.questionSource;
+  const sourceLabel = source === 'bailian' ? '百炼生成' : source ? '本地规则生成' : '';
+  const helperText = generatedAt
+    ? [sourceLabel, formatProfileDateTime(generatedAt)].filter(Boolean).join(' · ')
+    : '选择一个方向，边面边追问。';
   return (
     <section className="panel interview-question-panel">
       <div className="panel-heading">
         <div>
           <h3>AI推荐面试问题</h3>
-          <p className="muted">选择一个方向，边面边追问。</p>
+          <p className="muted">{helperText}</p>
         </div>
-        {candidate?.screening ? <StatusPill value={displayMatchLevel(candidate.screening.recommendation, candidate.screening.score)} /> : null}
+        <div className="panel-heading-actions">
+          {candidate?.screening ? <StatusPill value={displayMatchLevel(candidate.screening.recommendation, candidate.screening.score)} /> : null}
+          <button className="ghost-button compact-button" onClick={onGenerate} disabled={Boolean(busy) || !candidate?.id} type="button">
+            <Sparkles size={15} />
+            AI智能出题
+          </button>
+        </div>
       </div>
+      {candidate?.interview?.questionWarning ? <p className="inline-warning">{candidate.interview.questionWarning}</p> : null}
       <div className="question-filter" role="tablist" aria-label="面试问题方向">
         {groups.map((group) => (
           <button
@@ -2377,6 +2406,18 @@ function App() {
     }
   }
 
+  async function generateInterviewQuestions() {
+    if (!selected) return;
+    const result = await runAction('AI智能出题', () =>
+      api(`/api/candidates/${selected.id}/interview/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+    );
+    if (result?.candidate?.id) setSelectedId(result.candidate.id);
+  }
+
   const outlookConnected = Boolean(health?.outlook?.connected);
   const interviewHasStart = Boolean(interview.start);
   const officialInviteSent = ['web-sent-confirmed', 'graph-sent'].includes(selected?.interview?.inviteStatus);
@@ -3420,7 +3461,11 @@ function App() {
                           </label>
                         </div>
                       </section>
-                      <AIInterviewQuestionsPanel candidate={selected} />
+                      <AIInterviewQuestionsPanel
+                        candidate={selected}
+                        busy={busy}
+                        onGenerate={generateInterviewQuestions}
+                      />
                       <section className="panel wide-panel">
                         <h3>历史记录</h3>
                         {selected.interviewRecords?.length ? (

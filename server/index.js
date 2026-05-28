@@ -60,7 +60,7 @@ import {
   pullLarkCandidates
 } from './larkBaseService.js';
 import { pullInterviewSheetCandidates } from './interviewSheetService.js';
-import { normalizeScreeningForDisplay } from './screening.js';
+import { generateInterviewQuestions, normalizeScreeningForDisplay } from './screening.js';
 
 await fs.mkdir(paths.uploads, { recursive: true });
 await fs.mkdir(paths.larkDownloads, { recursive: true });
@@ -1522,6 +1522,50 @@ function statusFromInterviewDecision(decision = '') {
 app.post('/api/candidates/:id/interview/preview', asyncRoute(async (req, res) => {
   const candidate = requireCandidate(await getCandidate(req.params.id));
   res.json(await interviewPayload(candidate, req.body));
+}));
+
+app.post('/api/candidates/:id/interview/questions', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  const generatedAt = new Date().toISOString();
+  const result = await generateInterviewQuestions({
+    candidate,
+    forceLocal: Boolean(req.body?.mock || req.body?.forceLocal)
+  });
+  const updated = await patchCandidate(candidate.id, {
+    interview: {
+      ...(candidate.interview || {}),
+      questionGroups: result.groups,
+      questionGeneratedAt: generatedAt,
+      questionSource: result.source,
+      questionModel: result.model || '',
+      questionWarning: result.warning || '',
+      questionRawResponseId: result.raw_response_id || ''
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: generatedAt,
+        action: 'AI智能出题',
+        detail: `${result.source === 'bailian' ? '百炼' : '本地规则'}生成 ${result.groups.length} 组面试问题`
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'candidate-interview-questions',
+    status: result.warning ? 'warning' : 'passed',
+    detail: `${updated.name || updated.email || updated.id}：AI智能出题 ${result.groups.length} 组问题`,
+    mode: result.source
+  });
+  res.json({
+    candidate: stripPrivateCandidate(updated, { detail: true }),
+    questions: {
+      groups: result.groups,
+      source: result.source,
+      model: result.model || '',
+      generatedAt,
+      warning: result.warning || ''
+    }
+  });
 }));
 
 app.post('/api/candidates/:id/interview/confirmation-mail', asyncRoute(async (req, res) => {

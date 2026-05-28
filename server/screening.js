@@ -451,6 +451,178 @@ function safeJsonParse(content) {
   }
 }
 
+function questionSnippet(value, maxLength = 76) {
+  const text = normalizeText(value).replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function normalizeQuestionGroups(value) {
+  const groups = Array.isArray(value?.groups) ? value.groups : Array.isArray(value) ? value : [];
+  return groups
+    .map((group) => ({
+      title: normalizeText(group?.title).trim(),
+      questions: normalizeList(group?.questions).map((question) => normalizeText(question).trim()).filter(Boolean).slice(0, 4)
+    }))
+    .filter((group) => group.title && group.questions.length)
+    .slice(0, 6);
+}
+
+function fallbackInterviewQuestionGroups(candidate = {}) {
+  const screening = candidate.screening || {};
+  const projectSignal = questionSnippet(screening.project_match || screening.ai_experience_summary);
+  const internshipSignal = questionSnippet(screening.internship_match || screening.product_experience);
+  const riskSignal = questionSnippet(screening.risk_notes || screening.reliability_assessment);
+  const llmTags = normalizeList(screening.llm_knowledge).slice(0, 4);
+  const aiStack = llmTags.length ? llmTags.join(' / ') : 'AI工具或智能体工作流';
+  const focusItems = normalizeList(screening.interview_focus).slice(0, 3);
+  return [
+    {
+      title: '项目深挖',
+      questions: [
+        '选一个最核心的项目，按背景、目标用户、方案拆解、你的具体贡献、结果数据完整讲一遍。',
+        projectSignal
+          ? `AI评价里提到「${projectSignal}」，你亲自做过哪三个关键决策？每个决策分别依据什么信息？`
+          : '项目里最难拆的一步是什么？你当时如何把模糊问题拆成可执行任务？',
+        '如果今天重做这个项目，你会优先改哪一处？用什么指标判断改得更好？'
+      ]
+    },
+    {
+      title: '真实性校验',
+      questions: [
+        internshipSignal
+          ? `围绕「${internshipSignal}」，请讲一个真实推进细节：你和谁协作、遇到什么阻力、最后如何验证？`
+          : '讲一个你真正从0到1推动过的任务，具体产出物是什么？谁用了它？',
+        '项目中有没有失败、返工或判断失误？当时你怎么发现问题，又怎么调整？',
+        `简历里涉及 ${aiStack} 时，你做的是需求定义、流程编排、Prompt调优、数据处理还是效果评估？请举具体例子。`
+      ]
+    },
+    {
+      title: 'JD能力匹配',
+      questions: [
+        '如果把企业知识库问答或智能体需求交给你，你会如何拆用户场景、设计流程、定义输入输出和验收指标？',
+        '给你一批用户Badcase，你会如何分类、判断优先级、推动产品或知识库优化？',
+        '如果第一周加入乐享AI团队，你会先补齐哪些业务信息，并产出什么文档、原型或评估表？'
+      ]
+    },
+    {
+      title: '可靠度与风险',
+      questions: [
+        riskSignal
+          ? `AI筛选风险里提到「${riskSignal}」，请你正面回应这个风险，并给一个可验证的例子。`
+          : '讲一次需求不清或时间很紧的任务，你怎么排计划、同步风险、保证交付？',
+        '每周出勤、连续实习周期、课程或论文冲突怎么安排？哪些情况会影响稳定交付？',
+        focusItems.length ? `面试重点追问：${focusItems.join('；')}。请各用一个具体项目证据回答。` : '请举一个能证明你认真、细致、靠谱的项目或工作细节。'
+      ]
+    }
+  ];
+}
+
+export async function generateInterviewQuestions({ candidate = {}, forceLocal = false } = {}) {
+  const fallbackGroups = fallbackInterviewQuestionGroups(candidate);
+  const fallback = {
+    groups: fallbackGroups,
+    source: 'heuristic',
+    privacy: { pii_redacted_before_model: true }
+  };
+  if (forceLocal || !config.bailian.apiKey) {
+    return {
+      ...fallback,
+      warning: forceLocal ? '使用本地规则生成面试问题。' : '未配置 BAILIAN_API_KEY，已使用本地规则生成面试问题。'
+    };
+  }
+
+  const safeCandidate = sanitizeCandidateForModel(candidate);
+  const safeResumeText = redactSensitiveText(candidate.resumeText || '');
+  const safeScreening = {
+    ...(candidate.screening || {}),
+    risk_notes: redactSensitiveText(candidate.screening?.risk_notes || '')
+  };
+  const prompt = `你是联想乐享AI团队的面试官助手。请基于岗位JD、候选人简历和AI筛选评价，生成面试问题。输出严格JSON，不要输出JSON以外的内容。
+
+岗位JD：
+${config.recruiting.jd}
+
+出题目标：
+- 主要围绕项目经历深挖，判断候选人是否真实做过、是否理解项目、是否能解释自己的具体贡献。
+- 校验候选人的靠谱程度：交付稳定性、细心程度、目标导向、承诺兑现、复盘能力。
+- 考察与JD相关的能力：AI产品思维、用户需求拆解、智能体/Workflow/知识库/RAG/评测等技术理解和落地意识。
+- 问题要具体、可追问、适合面试现场直接读，不要泛泛而谈。
+- 不要询问隐私信息，不要包含候选人的邮箱、电话、身份证等PII。
+
+输出JSON格式：
+{
+  "groups": [
+    {"title": "项目深挖", "questions": ["问题1", "问题2", "问题3"]},
+    {"title": "真实性校验", "questions": ["问题1", "问题2", "问题3"]},
+    {"title": "JD能力匹配", "questions": ["问题1", "问题2", "问题3"]},
+    {"title": "可靠度与风险", "questions": ["问题1", "问题2", "问题3"]}
+  ]
+}
+
+候选人基础信息：
+${JSON.stringify(safeCandidate, null, 2)}
+
+AI筛选评价：
+${JSON.stringify(safeScreening, null, 2)}
+
+简历文本：
+${safeResumeText.slice(0, 14000)}`;
+
+  const timeoutMs = Math.max(1000, Number(config.bailian.timeoutMs || 45_000));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${config.bailian.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.bailian.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: config.bailian.model,
+        temperature: 0.35,
+        messages: [
+          {
+            role: 'system',
+            content: '你只输出可被JSON.parse解析的JSON对象。'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`百炼接口返回 ${response.status}`);
+    }
+    const data = await response.json();
+    const parsed = safeJsonParse(data.choices?.[0]?.message?.content || '');
+    const groups = normalizeQuestionGroups(parsed);
+    if (!groups.length) {
+      throw new Error('百炼返回的问题格式无法解析');
+    }
+    return {
+      groups,
+      source: 'bailian',
+      model: config.bailian.model,
+      privacy: { pii_redacted_before_model: true },
+      raw_response_id: data.id || ''
+    };
+  } catch (error) {
+    const message = error.name === 'AbortError' ? `百炼接口超时（${timeoutMs}ms）` : error.message;
+    return {
+      ...fallback,
+      warning: `百炼出题失败，已回退本地规则：${message}`
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function screenResume({ resumeText, candidate = {} }) {
   const safeResumeText = redactSensitiveText(resumeText);
   const safeCandidate = sanitizeCandidateForModel(candidate);

@@ -324,6 +324,19 @@ async function assertInterviewStatusFlow(candidateId) {
   if (lateMailSent.status !== '已预约面试' || lateMailSent.interview?.confirmation?.status !== 'offline_confirmed') {
     throw new Error('late confirmation-mail sent click regressed the scheduled candidate status');
   }
+
+  const questionRun = await fetchJson(`/api/candidates/${candidateId}/interview/questions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mock: true })
+  });
+  const groups = questionRun.candidate?.interview?.questionGroups || [];
+  if (!groups.length || !groups.every((group) => group.title && group.questions?.length)) {
+    throw new Error('AI interview question generation did not persist usable question groups');
+  }
+  if (questionRun.candidate?.status !== '已预约面试') {
+    throw new Error('AI interview question generation should not change candidate scheduling status');
+  }
 }
 
 async function waitForServer() {
