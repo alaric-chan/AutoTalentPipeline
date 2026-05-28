@@ -61,6 +61,7 @@ import {
 } from './larkBaseService.js';
 import { pullInterviewSheetCandidates } from './interviewSheetService.js';
 import { generateInterviewQuestions, normalizeScreeningForDisplay } from './screening.js';
+import { queueCandidateConfirmationNotification } from './notificationService.js';
 
 await fs.mkdir(paths.uploads, { recursive: true });
 await fs.mkdir(paths.larkDownloads, { recursive: true });
@@ -988,6 +989,7 @@ app.post('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
     detail: `${updated.name || updated.email || updated.id}：${confirmationStatusText(nextConfirmationStatus)}`,
     mode: 'public-confirmation'
   });
+  queueCandidateConfirmationNotification(updated);
   res.json(publicInterviewConfirmation(updated, updated.interview?.confirmation, { isCurrent: true }));
 }));
 

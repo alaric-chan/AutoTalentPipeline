@@ -5,6 +5,7 @@ import path from 'node:path';
 import { extractResumeProfile } from '../server/resumeParser.js';
 import { mergeCandidateForUpsert } from '../server/store.js';
 import { buildOutlookWebCalendarUrl, buildOutlookWebMailUrl } from '../server/templates.js';
+import { buildCandidateConfirmationNotification, feishuBotSign } from '../server/notificationService.js';
 
 const port = process.env.PORT || 4317;
 const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
@@ -200,6 +201,37 @@ function assertOutlookDeepLinkEncoding() {
   }
 }
 
+function assertLarkConfirmationNotification() {
+  const candidate = {
+    id: 'cand_notify_test',
+    name: '王萌',
+    email: 'wm@example.com',
+    phone: '13800138000',
+    interview: {
+      start: '2026-06-03T14:30',
+      end: '2026-06-03T15:00',
+      locationOrLink: 'Teams 线上会议',
+      confirmation: {
+        token: 'token_notify_test',
+        status: 'reschedule_requested',
+        response: 'reschedule',
+        note: '周五 16:30 可以',
+        respondedAt: '2026-05-28T14:24:00.000Z',
+        url: 'https://new.leaibot.cn/recruiting/#/confirm/token_notify_test'
+      }
+    }
+  };
+  const text = buildCandidateConfirmationNotification(candidate);
+  for (const expected of ['候选人申请改期', '王萌', '6月3日', '周五 16:30 可以', '#/confirm/token_notify_test']) {
+    if (!text.includes(expected)) {
+      throw new Error(`Lark confirmation notification missing ${expected}: ${text}`);
+    }
+  }
+  if (feishuBotSign('1234567890', 'secret') !== 'ZfKVuj6L5hFYWbpNk/R//8s1lu9nDXiIbG0Fc4NaCEk=') {
+    throw new Error('Feishu bot signature generation changed unexpectedly');
+  }
+}
+
 function confirmationTokenFromUrl(url = '') {
   const match = String(url).match(/#\/confirm\/([^/?#]+)/);
   return match ? decodeURIComponent(match[1]) : '';
@@ -355,6 +387,7 @@ async function main() {
     assertResumeProfileParsing();
     assertManualProfileOverrideMerge();
     assertOutlookDeepLinkEncoding();
+    assertLarkConfirmationNotification();
     if (process.env.SELF_TEST_RESTORE !== 'false') {
       dbBackup = await fs.readFile(dbPath, 'utf8').catch(() => null);
     }

@@ -59,6 +59,14 @@ export const config = {
       limit: Number(process.env.LARK_AUTO_SYNC_LIMIT || process.env.LARK_SYNC_LIMIT || 100)
     }
   },
+  notifications: {
+    lark: {
+      enabled: process.env.LARK_NOTIFICATION_ENABLED !== 'false',
+      webhookUrl: process.env.LARK_NOTIFICATION_WEBHOOK_URL || '',
+      secret: process.env.LARK_NOTIFICATION_SECRET || '',
+      timeoutMs: Number(process.env.LARK_NOTIFICATION_TIMEOUT_MS || 8000)
+    }
+  },
   interviewSheet: {
     enabled: process.env.INTERVIEW_SHEET_ENABLED === 'true',
     profile: process.env.INTERVIEW_SHEET_CLI_PROFILE || process.env.LARK_CLI_PROFILE || 'cli_a955ff0940789cca',
@@ -122,6 +130,13 @@ export function publicConfigStatus() {
       autoSyncEnabled: config.lark.autoSync.enabled && Boolean(config.lark.baseToken),
       autoSyncIntervalMinutes: config.lark.autoSync.intervalMinutes,
       autoSyncLimit: config.lark.autoSync.limit
+    },
+    notifications: {
+      lark: {
+        enabled: config.notifications.lark.enabled && Boolean(config.notifications.lark.webhookUrl),
+        configured: Boolean(config.notifications.lark.webhookUrl),
+        hasSecret: Boolean(config.notifications.lark.secret)
+      }
     },
     interviewSheet: {
       enabled: config.interviewSheet.enabled,

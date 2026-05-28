@@ -196,6 +196,19 @@ LARK_SYNC_LIMIT=100
 
 如果 `LARK_BASE_TOKEN`、`LARK_TABLE_ID` 不写入 `.env`，也可以直接在前端输入 Base 链接/token 和数据表 ID/名称后点击“拉取投递”。
 
+### 2.1 飞书面试确认提醒
+
+候选人在确认页点击“确认参加 / 申请改期 / 暂不参加”后，平台可以通过飞书群机器人即时推送提醒。先在飞书群里添加自定义机器人，把 Webhook URL 写入 `.env`：
+
+```bash
+LARK_NOTIFICATION_ENABLED=true
+LARK_NOTIFICATION_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/...
+LARK_NOTIFICATION_SECRET=
+LARK_NOTIFICATION_TIMEOUT_MS=8000
+```
+
+如果机器人启用了“签名校验”，把密钥填到 `LARK_NOTIFICATION_SECRET`。通知发送是异步的：候选人提交结果会先落库，飞书提醒失败不会影响候选人页面，但会写入操作日志和候选人时间线。
+
 ### 3. 历史面试表回填
 
 这是隐藏的历史回填能力，只用于把既有面试表中的电话沟通、面评、预计入职、offer 状态导入平台做对照，不作为当前投递入口。默认不在前端显示，需要使用时显式开启：
