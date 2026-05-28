@@ -356,6 +356,12 @@ pre {
   color: #126b38;
 }
 
+.neutral-result {
+  background: #f7f9fb;
+  border-color: #d8e0e8;
+  color: #202a33;
+}
+
 .confirm-result div {
   display: grid;
   gap: 2px;
@@ -363,6 +369,10 @@ pre {
 
 .confirm-result span {
   color: #396b4b;
+}
+
+.neutral-result span {
+  color: #627384;
 }
 
 .confirm-error {
@@ -1571,6 +1581,61 @@ pre {
   margin-bottom: 0;
 }
 
+.confirmation-detail-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0 0;
+}
+
+.confirmation-detail-grid div {
+  background: #fbfcfd;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.confirmation-detail-grid dt {
+  color: #627384;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.confirmation-detail-grid dd {
+  margin: 0;
+}
+
+.candidate-response-note {
+  color: #8a4f00;
+  font-weight: 650;
+  white-space: pre-wrap;
+}
+
+.confirmation-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.confirmation-history > strong {
+  font-size: 13px;
+}
+
+.confirmation-history a {
+  align-items: center;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  color: #17324d;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.confirmation-history small {
+  color: #627384;
+}
+
 .privacy-toolbar {
   align-items: center;
   display: flex;
@@ -1934,7 +1999,8 @@ pre {
   .main-grid,
   .detail-columns,
   .screening-layout,
-  .screening-context-grid {
+  .screening-context-grid,
+  .confirmation-detail-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2136,13 +2202,14 @@ pre {
   .application-fields,
   .application-fields.compact,
   .profile-grid,
-	  .profile-edit-form,
-	  .data-map,
-	  .confirm-info,
-	  .account-layout,
-	  .account-row {
-	    grid-template-columns: 1fr;
-	  }
+  .profile-edit-form,
+  .data-map,
+  .confirm-info,
+  .confirmation-detail-grid,
+  .account-layout,
+  .account-row {
+    grid-template-columns: 1fr;
+  }
 
   .main-grid {
     gap: 12px;

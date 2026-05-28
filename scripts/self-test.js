@@ -200,6 +200,133 @@ function assertOutlookDeepLinkEncoding() {
   }
 }
 
+function confirmationTokenFromUrl(url = '') {
+  const match = String(url).match(/#\/confirm\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function fetchJson(pathname, options = {}) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    ...options,
+    headers: {
+      ...authHeaders,
+      ...(options.headers || {})
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `${pathname} failed: ${response.status}`);
+  }
+  return data;
+}
+
+async function assertInterviewStatusFlow(candidateId) {
+  const draftOne = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: '2026-06-04T10:30',
+      end: '2026-06-04T11:00',
+      durationMinutes: 30,
+      locationOrLink: 'Teams 线上会议'
+    })
+  });
+  const oldToken = confirmationTokenFromUrl(draftOne.confirmationUrl);
+  if (!oldToken) throw new Error('first confirmation mail did not return a token');
+
+  const draftTwo = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: '2026-06-05T15:30',
+      end: '2026-06-05T16:00',
+      durationMinutes: 30,
+      locationOrLink: 'Teams 线上会议'
+    })
+  });
+  const currentToken = confirmationTokenFromUrl(draftTwo.confirmationUrl);
+  if (!currentToken || currentToken === oldToken) throw new Error('replacement confirmation mail did not rotate token');
+
+  const historical = await fetchJson(`/api/interview-confirmations/${encodeURIComponent(oldToken)}`);
+  if (historical.isCurrent !== false) {
+    throw new Error('old confirmation token should remain readable as history');
+  }
+
+  const sent = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail-sent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: 'self-test sent' })
+  });
+  if (sent.status !== '等待候选人确认') {
+    throw new Error(`confirmation sent status should wait for candidate: ${sent.status}`);
+  }
+
+  await fetchJson(`/api/interview-confirmations/${encodeURIComponent(currentToken)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response: 'reschedule', note: '周五全天都可以' })
+  });
+  const rescheduled = await fetchJson(`/api/candidates/${candidateId}`);
+  if (rescheduled.status !== '待重新安排' || rescheduled.interview?.confirmation?.note !== '周五全天都可以') {
+    throw new Error('candidate reschedule response was not persisted for admin review');
+  }
+
+  const replacement = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: '2026-06-08T14:30',
+      end: '2026-06-08T15:00',
+      durationMinutes: 30,
+      locationOrLink: 'Teams 线上会议'
+    })
+  });
+  const replacementToken = confirmationTokenFromUrl(replacement.confirmationUrl);
+  if (replacement.candidate?.status !== '确认邮件待发送') {
+    throw new Error(`reschedule replacement should return to confirmation draft stage: ${replacement.candidate?.status}`);
+  }
+
+  await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail-sent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: 'self-test replacement sent' })
+  });
+  await fetchJson(`/api/interview-confirmations/${encodeURIComponent(replacementToken)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response: 'confirm', note: '确认参加' })
+  });
+  const calendar = await fetchJson(`/api/candidates/${candidateId}/interview/outlook-web-calendar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: '2026-06-08T14:30',
+      end: '2026-06-08T15:00',
+      durationMinutes: 30,
+      locationOrLink: 'Teams 线上会议'
+    })
+  });
+  if (calendar.candidate?.status !== 'Outlook日程待发送') {
+    throw new Error(`calendar draft should move to Outlook send stage: ${calendar.candidate?.status}`);
+  }
+  const confirmedInvite = await fetchJson(`/api/candidates/${candidateId}/interview/confirm-sent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamsConfirmation: 'self-test' })
+  });
+  if (confirmedInvite.status !== '已预约面试') {
+    throw new Error(`calendar sent should be terminal schedule status: ${confirmedInvite.status}`);
+  }
+  const lateMailSent = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail-sent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: 'late click should not regress' })
+  });
+  if (lateMailSent.status !== '已预约面试' || lateMailSent.interview?.confirmation?.status !== 'confirmed') {
+    throw new Error('late confirmation-mail sent click regressed the scheduled candidate status');
+  }
+}
+
 async function waitForServer() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10_000) {
@@ -253,6 +380,7 @@ async function main() {
       if (!storedCandidate?.profileOverrides?.fields?.includes('phone')) {
         throw new Error('candidate profile edit did not mark the corrected phone field as manual');
       }
+      await assertInterviewStatusFlow(candidateId);
     }
     const candidatesResponse = await fetch(`${baseUrl}/api/candidates`, { headers: authHeaders });
     const candidates = await candidatesResponse.json();

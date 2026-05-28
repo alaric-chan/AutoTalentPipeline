@@ -517,6 +517,51 @@ function applicationField(candidate, names) {
   return '';
 }
 
+function parseShortInterviewDateTime(value) {
+  const text = cleanFieldValue(value).replace(/\s+/g, ' ').trim();
+  const match = text.match(/(\d{1,2})\s*[月/-]\s*(\d{1,2})\s*日?(?:（[^）]+）)?\s*(\d{1,2})[:：](\d{2})/);
+  if (!match) return '';
+  const [, month, day, hour, minute] = match;
+  const date = new Date(new Date().getFullYear(), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
+  return Number.isNaN(date.getTime()) ? '' : toDatetimeLocal(date);
+}
+
+function toDatetimeLocalValue(value) {
+  const text = cleanFieldValue(value);
+  if (!text || /待/.test(text)) return '';
+  const direct = text.replace(' ', 'T');
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(direct)) return direct.slice(0, 16);
+  const shortDateTime = parseShortInterviewDateTime(text);
+  if (shortDateTime) return shortDateTime;
+  const parsed = new Date(dateTimeValue(text));
+  return Number.isNaN(parsed.getTime()) ? '' : toDatetimeLocal(parsed);
+}
+
+function interviewDurationFromCandidate(interview = {}) {
+  const duration = Number(interview.durationMinutes);
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  const startDate = new Date(interview.start || '');
+  const endDate = new Date(interview.end || '');
+  if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime()) && endDate > startDate) {
+    return Math.round((endDate.getTime() - startDate.getTime()) / 60000);
+  }
+  return defaultInterviewDurationMinutes;
+}
+
+function defaultInterviewDraft(candidate) {
+  const savedInterview = candidate?.interview || {};
+  const start = toDatetimeLocalValue(savedInterview.start || applicationField(candidate, ['面试时间']));
+  const durationMinutes = interviewDurationFromCandidate(savedInterview);
+  const savedEnd = toDatetimeLocalValue(savedInterview.end);
+  return {
+    start,
+    end: savedEnd || resolveInterviewEnd(start, durationMinutes),
+    durationMinutes,
+    locationOrLink: savedInterview.locationOrLink || 'Teams 线上会议',
+    live: Boolean(savedInterview.live)
+  };
+}
+
 function cleanFieldValue(value) {
   const text = String(value ?? '').trim();
   const mailtoMatch = text.match(/^\[([^\]]+)\]\(mailto:([^)]+)\)$/i);
@@ -800,6 +845,9 @@ function ScreeningInsightPanel({ candidate }) {
 function ConfirmationStatusPanel({ candidate }) {
   const confirmation = candidate?.interview?.confirmation;
   if (!confirmation?.url) return null;
+  const history = Array.isArray(candidate?.interview?.confirmationHistory)
+    ? candidate.interview.confirmationHistory.slice(0, 4)
+    : [];
   return (
     <section className="panel wide-panel">
       <div className="panel-heading">
@@ -814,13 +862,43 @@ function ConfirmationStatusPanel({ candidate }) {
           <span>确认链接</span>
           <strong>{confirmationStatusLabel(confirmation.status)}</strong>
           {confirmation.respondedAt ? <small>{formatProfileDateTime(confirmation.respondedAt)}</small> : null}
-          {confirmation.note ? <p>{confirmation.note}</p> : null}
         </div>
         <a className="button-link ghost-button" href={confirmation.url} target="_blank" rel="noreferrer">
           <ExternalLink size={16} />
           打开确认页
         </a>
       </div>
+      <dl className="confirmation-detail-grid">
+        <div>
+          <dt>当前面试时间</dt>
+          <dd>{candidate?.interview?.start ? formatDateTime(candidate.interview.start) : '待安排'}</dd>
+        </div>
+        <div>
+          <dt>确认邮件发送</dt>
+          <dd>{confirmation.sentAt ? formatProfileDateTime(confirmation.sentAt) : '尚未标记已发送'}</dd>
+        </div>
+        <div>
+          <dt>候选人反馈</dt>
+          <dd>{confirmation.respondedAt ? formatProfileDateTime(confirmation.respondedAt) : '尚未提交'}</dd>
+        </div>
+        <div>
+          <dt>候选人留言/可面时间</dt>
+          <dd className={confirmation.note ? 'candidate-response-note' : ''}>
+            {confirmation.note || (confirmation.status === 'reschedule_requested' ? '候选人未填写留言，请联系确认可面时间。' : '暂无留言')}
+          </dd>
+        </div>
+      </dl>
+      {history.length ? (
+        <div className="confirmation-history">
+          <strong>历史确认链接</strong>
+          {history.map((item) => (
+            <a key={item.token} href={item.url || `#/confirm/${encodeURIComponent(item.token)}`} target="_blank" rel="noreferrer">
+              <span>{confirmationStatusLabel(item.status)}</span>
+              <small>{item.respondedAt ? formatProfileDateTime(item.respondedAt) : item.archivedAt ? `替换于 ${formatProfileDateTime(item.archivedAt)}` : '未反馈'}</small>
+            </a>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -894,6 +972,30 @@ function confirmationStatusLabel(status = '') {
   return '待发送确认邮件';
 }
 
+function candidateScheduleStatus(candidate) {
+  const confirmationStatus = candidate?.interview?.confirmation?.status;
+  const inviteStatus = candidate?.interview?.inviteStatus;
+  if (['web-sent-confirmed', 'graph-sent'].includes(inviteStatus)) return '已预约面试';
+  if (['已预约面试', '面试记录', 'Offer跟进'].includes(candidate?.status)) return candidate.status;
+  if (inviteStatus === 'web-link-generated') return 'Outlook日程待发送';
+  if (candidate?.status === '候选人已确认' && !['reschedule_requested', 'declined'].includes(confirmationStatus)) {
+    return '候选人已确认';
+  }
+  if (confirmationStatus) {
+    const label = confirmationStatusLabel(confirmationStatus);
+    if (confirmationStatus === 'reschedule_requested') return '待重新安排';
+    if (confirmationStatus === 'declined') return '候选人放弃';
+    return label;
+  }
+  if (candidate?.interview?.start) return '待发送确认邮件';
+  return candidate?.status || (candidate?.manualReview?.decision === 'pass' ? '待安排时间' : '待邀约');
+}
+
+function candidateScheduleTime(candidate) {
+  if (candidate?.interview?.start) return formatDateTime(candidate.interview.start);
+  return applicationField(candidate, ['面试时间']) || '待安排';
+}
+
 function formalCalendarReady(candidate) {
   const confirmationStatus = candidate?.interview?.confirmation?.status;
   return (
@@ -935,7 +1037,9 @@ function latestInterviewRecord(candidate) {
 function filterCandidatesByStage(candidates, view) {
   if (view === 'schedule') {
     return candidates.filter((candidate) =>
-      candidate.manualReview?.decision === 'pass' || /待邀约|面试|已邀约|已预约/i.test(candidate.status || '')
+      candidate.manualReview?.decision === 'pass' ||
+      candidate.interview ||
+      /待邀约|面试|确认|改期|已邀约|已预约|Outlook/i.test(candidate.status || '')
     );
   }
   if (view === 'interview') {
@@ -967,8 +1071,8 @@ function stageCells(candidate, view) {
     return [
       candidate.name || candidateEmail(candidate) || candidate.id,
       displayContact(candidate),
-      candidate.interview?.start ? formatDateTime(candidate.interview.start) : applicationField(candidate, ['面试时间']) || '待安排',
-      <ListStatusBadge value={candidate.status || confirmationStatusLabel(candidate.interview?.confirmation?.status)} />
+      candidateScheduleTime(candidate),
+      <ListStatusBadge value={candidateScheduleStatus(candidate)} />
     ];
   }
   if (view === 'interview') {
@@ -1152,6 +1256,7 @@ function InterviewConfirmationPage({ token }) {
   }
 
   const isDone = ['confirmed', 'reschedule_requested', 'declined'].includes(data?.status);
+  const isHistoricalLink = data && data.isCurrent === false;
 
   return (
     <main className="public-confirm-shell">
@@ -1172,7 +1277,7 @@ function InterviewConfirmationPage({ token }) {
             <div className="confirm-hero">
               <StatusPill value={data.statusText} />
               <h1>{data.candidateName}，请确认面试时间</h1>
-              <p>确认后，我们会再发送正式 Outlook/Teams 日程邀请。</p>
+              <p>{isHistoricalLink ? '这是历史确认链接，请以最新邮件中的链接为准。' : '确认后，我们会再发送正式 Outlook/Teams 日程邀请。'}</p>
             </div>
             <dl className="confirm-info">
               <dt>岗位</dt>
@@ -1187,7 +1292,15 @@ function InterviewConfirmationPage({ token }) {
                 {data.contactPhone ? ` · ${data.contactPhone}` : ''}
               </dd>
             </dl>
-            {isDone ? (
+            {isHistoricalLink && !isDone ? (
+              <div className="confirm-result neutral-result">
+                <AlertTriangle size={22} />
+                <div>
+                  <strong>历史链接已替换</strong>
+                  <span>这条确认链接对应的面试时间已经更新，请查看最新确认邮件。</span>
+                </div>
+              </div>
+            ) : isDone ? (
               <div className="confirm-result">
                 <CheckCircle2 size={22} />
                 <div>
@@ -1199,6 +1312,7 @@ function InterviewConfirmationPage({ token }) {
                         ? '我们已收到改期申请，会尽快重新协调时间。'
                         : '已收到反馈，感谢你的告知。'}
                   </span>
+                  {data.note ? <span>备注：{data.note}</span> : null}
                 </div>
               </div>
             ) : (
@@ -1255,13 +1369,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('全部');
   const [candidatePage, setCandidatePage] = useState(1);
   const [syncQuery, setSyncQuery] = useState('超级智能体 实习申请');
-  const [interview, setInterview] = useState({
-    start: '2026-05-27T14:30',
-    end: '2026-05-27T15:00',
-    durationMinutes: defaultInterviewDurationMinutes,
-    locationOrLink: 'Teams 线上会议',
-    live: false
-  });
+  const [interview, setInterview] = useState(() => defaultInterviewDraft(null));
   const [timePreset, setTimePreset] = useState('custom');
   const [recordDraft, setRecordDraft] = useState(() => defaultRecordDraft(null));
   const [offerDraft, setOfferDraft] = useState(() => defaultOfferDraft(null));
@@ -1434,6 +1542,21 @@ function App() {
   useEffect(() => {
     setShowResumeText(false);
   }, [selectedId]);
+
+  useEffect(() => {
+    setInterview(defaultInterviewDraft(selected));
+    setTimePreset('custom');
+    setPreview(null);
+  }, [
+    selected?.id,
+    selected?.interview?.start,
+    selected?.interview?.end,
+    selected?.interview?.durationMinutes,
+    selected?.interview?.locationOrLink,
+    selected?.interview?.live,
+    selected?.interview?.confirmation?.token,
+    selected?.interview?.inviteStatus
+  ]);
 
   useEffect(() => {
     const file = selected?.resumeFile;
@@ -2114,8 +2237,27 @@ function App() {
   }
 
   const outlookConnected = Boolean(health?.outlook?.connected);
-  const formalCalendarDisabled = Boolean(busy) || !candidateHasEmail(selected) || !formalCalendarReady(selected);
-  const interviewScheduleDisabled = Boolean(busy) || !outlookConnected || (interview.live && !formalCalendarReady(selected));
+  const interviewHasStart = Boolean(interview.start);
+  const officialInviteSent = ['web-sent-confirmed', 'graph-sent'].includes(selected?.interview?.inviteStatus);
+  const confirmationCompleted = ['confirmed', 'declined'].includes(selected?.interview?.confirmation?.status);
+  const confirmationMailSentVisible =
+    selected?.interview?.confirmation?.status === 'mail-draft-generated' && !officialInviteSent;
+  const confirmationMailDisabled =
+    Boolean(busy) ||
+    !interviewHasStart ||
+    !candidateHasEmail(selected) ||
+    confirmationCompleted ||
+    (officialInviteSent && !['待重新安排', '申请改期'].includes(selected?.status));
+  const formalCalendarDisabled =
+    Boolean(busy) ||
+    !interviewHasStart ||
+    !candidateHasEmail(selected) ||
+    !formalCalendarReady(selected) ||
+    officialInviteSent;
+  const interviewScheduleDisabled =
+    Boolean(busy) || !interviewHasStart || !outlookConnected || (interview.live && !formalCalendarReady(selected));
+  const scheduleUndoVisible =
+    selected?.manualReview && !selected?.interview?.confirmation && !selected?.interview?.inviteStatus && !selected?.interview?.start;
   const bailianReady = Boolean(health?.config?.bailian?.hasApiKey);
   const larkProfile = larkStatus?.profile || health?.config?.lark?.profile || larkConfig.profile;
   const larkBackendReady = Boolean(health?.config?.lark?.hasBaseToken && health?.config?.lark?.hasTableId);
@@ -2676,7 +2818,7 @@ function App() {
                         {detailLoadingId === selected.id ? <span>详情加载中</span> : null}
                       </div>
                     </div>
-                    <StatusPill value={selected.status} />
+                    <StatusPill value={activeView === 'schedule' ? candidateScheduleStatus(selected) : selected.status} />
                   </div>
 
                   <div className="actions-row">
@@ -2709,7 +2851,11 @@ function App() {
                     ) : null}
                     {activeView === 'schedule' ? (
                       <>
-                        <button onClick={previewInterview} disabled={Boolean(busy)}>
+                        <button
+                          onClick={previewInterview}
+                          disabled={Boolean(busy) || !interviewHasStart}
+                          title={!interviewHasStart ? '请先为当前候选人选择面试时间。' : undefined}
+                        >
                           <Mail size={16} />
                           面邀预览
                         </button>
@@ -2717,7 +2863,9 @@ function App() {
                           onClick={scheduleInterview}
                           disabled={interviewScheduleDisabled}
                           title={
-                            !outlookConnected
+                            !interviewHasStart
+                              ? '请先为当前候选人选择面试时间。'
+                              : !outlookConnected
                               ? 'Outlook 未连接，不能执行预定验证或真实创建。'
                               : interview.live && !formalCalendarReady(selected)
                                 ? '候选人确认面试时间后，再执行真实创建。'
@@ -2727,11 +2875,23 @@ function App() {
                           <CalendarPlus size={16} />
                           {interview.live ? 'Graph真实创建' : 'dry-run 预定'}
                         </button>
-                        <button onClick={openInterviewConfirmationMail} disabled={Boolean(busy) || !candidateHasEmail(selected)}>
+                        <button
+                          onClick={openInterviewConfirmationMail}
+                          disabled={confirmationMailDisabled}
+                          title={
+                            !interviewHasStart
+                              ? '请先为当前候选人选择面试时间。'
+                              : confirmationCompleted
+                                ? '候选人已反馈当前确认邮件，请进入下一步。'
+                              : officialInviteSent
+                                ? '正式日程已确认发送，不再回退到确认邮件环节。'
+                                : undefined
+                          }
+                        >
                           <Mail size={16} />
                           发送确认邮件
                         </button>
-                        {selected.interview?.confirmation?.status === 'mail-draft-generated' ? (
+                        {confirmationMailSentVisible ? (
                           <button className="ghost-button" onClick={confirmInterviewConfirmationMailSent} disabled={Boolean(busy)}>
                             <CheckCircle2 size={16} />
                             已发确认邮件
@@ -2752,8 +2912,12 @@ function App() {
                           onClick={openOutlookCalendarInvite}
                           disabled={formalCalendarDisabled}
                           title={
-                            !candidateHasEmail(selected)
+                            !interviewHasStart
+                              ? '请先为当前候选人选择面试时间。'
+                              : !candidateHasEmail(selected)
                               ? '候选人缺少邮箱。'
+                              : officialInviteSent
+                                ? '正式日程已确认发送。'
                               : !formalCalendarReady(selected)
                                 ? '候选人确认面试时间后，再发送正式 Outlook/Teams 日程。'
                                 : undefined
@@ -2768,7 +2932,7 @@ function App() {
                             已在Outlook发送
                           </button>
                         ) : null}
-                        {selected.manualReview ? (
+                        {scheduleUndoVisible ? (
                           <button className="ghost-button" onClick={() => reviewSelected('undo')} disabled={Boolean(busy)}>
                             撤销通过
                           </button>

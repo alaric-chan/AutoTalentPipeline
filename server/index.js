@@ -372,6 +372,79 @@ function reviewStatus(decision, fallback = '待人工确认') {
   return fallback;
 }
 
+const interviewStatusPriority = new Map([
+  ['待筛选', 0],
+  ['待人工确认', 5],
+  ['已通过', 10],
+  ['待邀约', 10],
+  ['待安排时间', 15],
+  ['待发送确认邮件', 20],
+  ['面试待确认', 20],
+  ['确认邮件待发送', 30],
+  ['Outlook邮件待发送', 30],
+  ['等待候选人确认', 40],
+  ['申请改期', 45],
+  ['待重新安排', 45],
+  ['候选人已确认', 50],
+  ['Outlook日程待发送', 60],
+  ['已预约面试', 70],
+  ['面试记录', 80],
+  ['备选', 85],
+  ['Offer跟进', 90],
+  ['Offer邮件待发送', 90],
+  ['候选人放弃', 100],
+  ['不通过', 100],
+  ['已入职', 110]
+]);
+
+function statusPriority(status = '') {
+  return interviewStatusPriority.get(String(status || '').trim()) ?? 0;
+}
+
+function advanceInterviewStatus(candidate, nextStatus, options = {}) {
+  const currentStatus = String(candidate?.status || '').trim();
+  if (!currentStatus || options.force) return nextStatus;
+  if (options.allowFrom?.includes(currentStatus)) return nextStatus;
+  return statusPriority(nextStatus) >= statusPriority(currentStatus) ? nextStatus : currentStatus;
+}
+
+function isFinalConfirmationStatus(status = '') {
+  return ['confirmed', 'reschedule_requested', 'declined'].includes(String(status || ''));
+}
+
+function isOfficialInviteSent(interview = {}) {
+  return ['web-sent-confirmed', 'graph-sent'].includes(interview.inviteStatus);
+}
+
+function confirmationHistoryEntry(candidate, confirmation, archivedAt) {
+  if (!confirmation?.token) return null;
+  const interview = candidate.interview || {};
+  return {
+    ...confirmation,
+    url: confirmation.url || confirmationUrlForToken(confirmation.token),
+    archivedAt,
+    interview: {
+      start: interview.start || '',
+      end: interview.end || '',
+      locationOrLink: interview.locationOrLink || '',
+      contactName: interview.contactName || '',
+      contactPhone: interview.contactPhone || ''
+    }
+  };
+}
+
+function prependConfirmationHistory(candidate, archivedAt) {
+  const current = confirmationHistoryEntry(candidate, candidate.interview?.confirmation, archivedAt);
+  const history = Array.isArray(candidate.interview?.confirmationHistory)
+    ? candidate.interview.confirmationHistory
+    : [];
+  if (!current) return history;
+  return [
+    current,
+    ...history.filter((item) => item?.token !== current.token)
+  ].slice(0, 12);
+}
+
 function normalizedAppBaseUrl() {
   return String(config.appBaseUrl || '').replace(/\/+$/, '');
 }
@@ -394,15 +467,39 @@ async function findCandidateByConfirmationToken(token) {
   const value = String(token || '').trim();
   if (!value) return null;
   const candidates = await listCandidates();
-  return candidates.find((candidate) => candidate.interview?.confirmation?.token === value) || null;
+  for (const candidate of candidates) {
+    if (candidate.interview?.confirmation?.token === value) {
+      return {
+        candidate,
+        confirmation: candidate.interview.confirmation,
+        isCurrent: true,
+        historyIndex: -1
+      };
+    }
+    const history = Array.isArray(candidate.interview?.confirmationHistory)
+      ? candidate.interview.confirmationHistory
+      : [];
+    const historyIndex = history.findIndex((item) => item?.token === value);
+    if (historyIndex >= 0) {
+      return {
+        candidate,
+        confirmation: history[historyIndex],
+        isCurrent: false,
+        historyIndex
+      };
+    }
+  }
+  return null;
 }
 
-function publicInterviewConfirmation(candidate) {
+function publicInterviewConfirmation(candidate, matchedConfirmation = null, options = {}) {
   const interview = candidate.interview || {};
-  const confirmation = interview.confirmation || {};
+  const confirmation = matchedConfirmation || interview.confirmation || {};
+  const confirmationInterview = confirmation.interview || {};
   const safeInterview = {
     ...interview,
-    start: interview.start || new Date().toISOString()
+    ...confirmationInterview,
+    start: confirmationInterview.start || interview.start || new Date().toISOString()
   };
   const context = buildInterviewContext({ candidate, interview: safeInterview });
   return {
@@ -415,12 +512,14 @@ function publicInterviewConfirmation(candidate) {
     candidateName: context.name,
     position: config.recruiting.position,
     timeText: context.timeText,
-    start: interview.start || '',
-    end: interview.end || '',
-    locationOrLink: interview.locationOrLink || '',
+    start: safeInterview.start || '',
+    end: safeInterview.end || '',
+    locationOrLink: safeInterview.locationOrLink || '',
     contactName: context.contactName,
     contactPhone: context.contactPhone,
-    contactEmail: context.contactEmail
+    contactEmail: context.contactEmail,
+    isCurrent: options.isCurrent !== false,
+    archivedAt: confirmation.archivedAt || ''
   };
 }
 
@@ -805,20 +904,26 @@ app.post('/api/security/login', (req, res) => {
 });
 
 app.get('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
-  const candidate = await findCandidateByConfirmationToken(req.params.token);
-  if (!candidate) {
+  const match = await findCandidateByConfirmationToken(req.params.token);
+  if (!match) {
     res.status(404).json({ error: '确认链接不存在或已失效。' });
     return;
   }
-  res.json(publicInterviewConfirmation(candidate));
+  res.json(publicInterviewConfirmation(match.candidate, match.confirmation, { isCurrent: match.isCurrent }));
 }));
 
 app.post('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
-  const candidate = await findCandidateByConfirmationToken(req.params.token);
-  if (!candidate) {
+  const match = await findCandidateByConfirmationToken(req.params.token);
+  if (!match) {
     res.status(404).json({ error: '确认链接不存在或已失效。' });
     return;
   }
+  if (!match.isCurrent) {
+    const error = new Error('这条确认链接已被新的面试确认邮件替换，请以最新邮件中的链接为准。');
+    error.status = 409;
+    throw error;
+  }
+  const { candidate } = match;
   const response = String(req.body?.response || '').trim();
   if (!['confirm', 'reschedule', 'decline'].includes(response)) {
     const error = new Error('请选择确认参加、申请改期或暂不参加。');
@@ -839,22 +944,29 @@ app.post('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
       : response === 'reschedule'
         ? '待重新安排'
         : '候选人放弃';
+  const nextInterview = {
+    ...(candidate.interview || {}),
+    confirmation: {
+      ...(candidate.interview?.confirmation || {}),
+      status: nextConfirmationStatus,
+      response,
+      note,
+      respondedAt: now
+    },
+    actions: [
+      ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation'),
+      { type: 'candidate-confirmation', status: nextConfirmationStatus, at: now }
+    ]
+  };
+  if (response !== 'confirm') {
+    delete nextInterview.inviteStatus;
+    delete nextInterview.webCalendarUrl;
+    delete nextInterview.inviteGeneratedAt;
+    delete nextInterview.inviteSentAt;
+  }
   const updated = await patchCandidate(candidate.id, {
     status: nextCandidateStatus,
-    interview: {
-      ...(candidate.interview || {}),
-      confirmation: {
-        ...(candidate.interview?.confirmation || {}),
-        status: nextConfirmationStatus,
-        response,
-        note,
-        respondedAt: now
-      },
-      actions: [
-        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation'),
-        { type: 'candidate-confirmation', status: nextConfirmationStatus, at: now }
-      ]
-    },
+    interview: nextInterview,
     timeline: [
       ...(candidate.timeline || []),
       {
@@ -875,7 +987,7 @@ app.post('/api/interview-confirmations/:token', asyncRoute(async (req, res) => {
     detail: `${updated.name || updated.email || updated.id}：${confirmationStatusText(nextConfirmationStatus)}`,
     mode: 'public-confirmation'
   });
-  res.json(publicInterviewConfirmation(updated));
+  res.json(publicInterviewConfirmation(updated, updated.interview?.confirmation, { isCurrent: true }));
 }));
 
 app.use('/api', asyncRoute(async (req, res, next) => {
@@ -1335,7 +1447,7 @@ app.post('/api/candidates/:id/review', asyncRoute(async (req, res) => {
       ? candidate.screening
         ? '待人工确认'
         : '待筛选'
-      : reviewStatus(decision);
+      : advanceInterviewStatus(candidate, reviewStatus(decision));
   const updated = await patchCandidate(candidate.id, {
     status: nextStatus,
     manualReview: nextManualReview,
@@ -1365,10 +1477,26 @@ app.post('/api/candidates/:id/review', asyncRoute(async (req, res) => {
 async function interviewPayload(candidate, body) {
   const settings = await getSettings();
   const template = normalizeInterviewTemplate(settings.interviewTemplate || defaultInterviewTemplate);
-  const start = body.start || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  const start = String(body.start || candidate.interview?.start || '').trim();
+  if (!start) {
+    const error = new Error('请先为候选人选择面试开始时间。');
+    error.status = 400;
+    throw error;
+  }
+  if (Number.isNaN(new Date(start).getTime())) {
+    const error = new Error('面试开始时间格式不正确，请重新选择。');
+    error.status = 400;
+    throw error;
+  }
   const end =
     body.end ||
+    candidate.interview?.end ||
     new Date(new Date(start).getTime() + 30 * 60 * 1000).toISOString().slice(0, 16);
+  if (Number.isNaN(new Date(end).getTime())) {
+    const error = new Error('面试结束时间格式不正确，请重新选择。');
+    error.status = 400;
+    throw error;
+  }
   const interview = {
     start,
     end,
@@ -1402,6 +1530,16 @@ app.post('/api/candidates/:id/interview/confirmation-mail', asyncRoute(async (re
     error.status = 400;
     throw error;
   }
+  if (['confirmed', 'declined'].includes(candidate.interview?.confirmation?.status)) {
+    const error = new Error('候选人已反馈当前确认邮件，请进入下一步；如需改期，请先记录候选人改期反馈。');
+    error.status = 409;
+    throw error;
+  }
+  if (isOfficialInviteSent(candidate.interview) && !['待重新安排', '申请改期'].includes(candidate.status)) {
+    const error = new Error('该候选人已进入正式日程发送阶段，如需改期请先记录候选人改期反馈后再重新发送确认邮件。');
+    error.status = 409;
+    throw error;
+  }
   const payload = await interviewPayload(candidate, req.body);
   const token = createConfirmationToken();
   const confirmationUrl = confirmationUrlForToken(token);
@@ -1413,11 +1551,12 @@ app.post('/api/candidates/:id/interview/confirmation-mail', asyncRoute(async (re
   const webMailUrl = buildOutlookWebMailUrl({ email, candidate });
   const generatedAt = new Date().toISOString();
   const updated = await patchCandidate(candidate.id, {
-    status: '确认邮件待发送',
+    status: advanceInterviewStatus(candidate, '确认邮件待发送', { allowFrom: ['待重新安排', '申请改期'] }),
     interview: {
       ...(candidate.interview || {}),
       ...payload.interview,
       subject: payload.email.subject,
+      confirmationHistory: prependConfirmationHistory(candidate, generatedAt),
       confirmation: {
         token,
         url: confirmationUrl,
@@ -1476,15 +1615,21 @@ app.post('/api/candidates/:id/interview/confirmation-mail-sent', asyncRoute(asyn
     throw error;
   }
   const sentAt = new Date().toISOString();
-  const updated = await patchCandidate(candidate.id, {
-    status: '等待候选人确认',
-    interview: {
-      ...(candidate.interview || {}),
-      confirmation: {
+  const nextConfirmation = isFinalConfirmationStatus(confirmation.status)
+    ? {
+        ...confirmation,
+        sentAt: confirmation.sentAt || sentAt
+      }
+    : {
         ...confirmation,
         status: 'pending',
         sentAt
-      },
+      };
+  const updated = await patchCandidate(candidate.id, {
+    status: advanceInterviewStatus(candidate, '等待候选人确认'),
+    interview: {
+      ...(candidate.interview || {}),
+      confirmation: nextConfirmation,
       actions: [
         ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'candidate-confirmation-mail-sent'),
         { type: 'candidate-confirmation-mail-sent', status: 'confirmed-by-user', at: sentAt }
@@ -1545,7 +1690,9 @@ app.post('/api/candidates/:id/interview/schedule', asyncRoute(async (req, res) =
   }
 
   const updated = await patchCandidate(candidate.id, {
-    status: live ? '已预约面试' : '面试待确认',
+    status: live
+      ? advanceInterviewStatus(candidate, '已预约面试')
+      : advanceInterviewStatus(candidate, '待发送确认邮件', { allowFrom: ['待重新安排', '申请改期'] }),
     interview: {
       ...(candidate.interview || {}),
       ...payload.interview,
@@ -1613,7 +1760,7 @@ app.post('/api/candidates/:id/interview/outlook-web-calendar', asyncRoute(async 
   const candidate = requireCandidate(await getCandidate(req.params.id));
   const payload = await interviewPayload(candidate, req.body);
   const updated = await patchCandidate(candidate.id, {
-    status: 'Outlook日程待发送',
+    status: advanceInterviewStatus(candidate, 'Outlook日程待发送'),
     interview: {
       ...(candidate.interview || {}),
       ...payload.interview,
@@ -1654,7 +1801,7 @@ app.post('/api/candidates/:id/interview/outlook-web-mail', asyncRoute(async (req
   const payload = await interviewPayload(candidate, req.body);
   const webMailUrl = buildOutlookWebMailUrl({ email: payload.email, candidate });
   const updated = await patchCandidate(candidate.id, {
-    status: 'Outlook邮件待发送',
+    status: advanceInterviewStatus(candidate, 'Outlook邮件待发送'),
     interview: {
       ...(candidate.interview || {}),
       ...payload.interview,
@@ -1693,7 +1840,7 @@ app.post('/api/candidates/:id/interview/confirm-sent', asyncRoute(async (req, re
   const candidate = requireCandidate(await getCandidate(req.params.id));
   const sentAt = new Date().toISOString();
   const updated = await patchCandidate(candidate.id, {
-    status: '已预约面试',
+    status: advanceInterviewStatus(candidate, '已预约面试'),
     interview: {
       ...(candidate.interview || {}),
       inviteStatus: 'web-sent-confirmed',
@@ -1923,7 +2070,7 @@ app.post('/api/self-test', asyncRoute(async (req, res) => {
     locationOrLink: 'Teams 线上会议'
   });
   const scheduled = await patchCandidate(screened.id, {
-    status: '面试待确认',
+    status: '待发送确认邮件',
     interview: {
       ...preview.interview,
       live: false,
