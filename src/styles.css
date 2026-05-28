@@ -1691,6 +1691,45 @@ pre {
   gap: 10px;
 }
 
+.interview-question-panel .panel-heading {
+  align-items: flex-start;
+}
+
+.interview-question-panel .panel-heading p {
+  margin: 3px 0 0;
+}
+
+.interview-question-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.interview-question-grid article {
+  background: #fbfcfd;
+  border: 1px solid #e4eaf0;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.interview-question-grid h4 {
+  font-size: 13px;
+  margin: 0;
+}
+
+.interview-question-grid ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.interview-question-grid li {
+  line-height: 1.5;
+}
+
 .record-list article {
   background: #f7f9fb;
   border: 1px solid #e4eaf0;
@@ -2000,7 +2039,8 @@ pre {
   .detail-columns,
   .screening-layout,
   .screening-context-grid,
-  .confirmation-detail-grid {
+  .confirmation-detail-grid,
+  .interview-question-grid {
     grid-template-columns: 1fr;
   }
 

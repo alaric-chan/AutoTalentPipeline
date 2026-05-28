@@ -483,26 +483,43 @@ function addMinutes(value, minutes) {
   return toDatetimeLocal(date);
 }
 
+function isWeekday(date) {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
+}
+
 function buildInterviewTimeOptions() {
-  const slots = [
-    { dayOffset: 1, hour: 10, minute: 30 },
-    { dayOffset: 1, hour: 14, minute: 30 },
-    { dayOffset: 2, hour: 10, minute: 30 },
-    { dayOffset: 2, hour: 15, minute: 0 },
-    { dayOffset: 3, hour: 14, minute: 30 }
+  const slotTimes = [
+    { hour: 10, minute: 30 },
+    { hour: 11, minute: 0 },
+    { hour: 14, minute: 30 },
+    { hour: 15, minute: 0 },
+    { hour: 15, minute: 30 }
   ];
-  return slots.map((slot, index) => {
+  const options = [];
+  const now = new Date();
+  const earliest = new Date(now.getTime() + 30 * 60 * 1000);
+
+  for (let dayOffset = 0; options.length < 15 && dayOffset < 21; dayOffset += 1) {
     const date = new Date();
-    date.setDate(date.getDate() + slot.dayOffset);
-    date.setHours(slot.hour, slot.minute, 0, 0);
-    const start = toDatetimeLocal(date);
-    return {
-      value: `slot-${index}`,
-      start,
-      end: addMinutes(start, defaultInterviewDurationMinutes),
-      label: `${formatDateTime(start)} 开始`
-    };
-  });
+    date.setDate(now.getDate() + dayOffset);
+    if (!isWeekday(date)) continue;
+    for (const slot of slotTimes) {
+      const startDate = new Date(date);
+      startDate.setHours(slot.hour, slot.minute, 0, 0);
+      if (startDate <= earliest) continue;
+      const start = toDatetimeLocal(startDate);
+      options.push({
+        value: `slot-${options.length}`,
+        start,
+        end: addMinutes(start, defaultInterviewDurationMinutes),
+        label: `${formatDateTime(start)} 开始`
+      });
+      if (options.length >= 15) break;
+    }
+  }
+
+  return options;
 }
 
 function resolveInterviewEnd(start, durationMinutes) {
@@ -797,6 +814,90 @@ function buildScreeningSummaryMarkdown(screening) {
     .filter(([, value]) => meaningfulValue(value))
     .map(([label, value]) => `- **${label}**：${cleanFieldValue(value)}`)
     .join('\n');
+}
+
+function questionSnippet(value, maxLength = 78) {
+  const text = cleanFieldValue(value).replace(/\s+/g, ' ');
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function buildInterviewQuestionGroups(candidate) {
+  const screening = candidate?.screening || {};
+  const projectSignal = questionSnippet(screening.project_match || screening.ai_experience_summary);
+  const internshipSignal = questionSnippet(screening.internship_match || screening.product_experience);
+  const riskSignal = questionSnippet(screening.risk_notes || screening.reliability_assessment);
+  const llmTags = listFromValue(screening.llm_knowledge).slice(0, 4);
+  const aiStack = llmTags.length ? llmTags.join(' / ') : 'AI工具或智能体工作流';
+  const focusItems = listFromValue(screening.interview_focus).slice(0, 3);
+
+  return [
+    {
+      title: '项目深挖',
+      questions: [
+        '选一个最核心的项目，按背景、目标用户、方案拆解、你的具体贡献、结果数据完整讲一遍。',
+        projectSignal
+          ? `AI评价里提到「${projectSignal}」，你亲自做过哪三个关键决策？每个决策分别依据什么信息？`
+          : '项目里最难拆的一步是什么？你当时如何把模糊问题拆成可执行任务？',
+        '如果今天重做这个项目，你会优先改哪一处？用什么指标判断改得更好？'
+      ]
+    },
+    {
+      title: '真实性校验',
+      questions: [
+        internshipSignal
+          ? `围绕「${internshipSignal}」，请讲一个真实推进细节：你和谁协作、遇到什么阻力、最后如何验证？`
+          : '讲一个你真正从0到1推动过的任务，具体产出物是什么？谁用了它？',
+        '项目中有没有失败、返工或判断失误？当时你怎么发现问题，又怎么调整？',
+        `简历里涉及 ${aiStack} 时，你做的是需求定义、流程编排、Prompt调优、数据处理还是效果评估？请举具体例子。`
+      ]
+    },
+    {
+      title: 'JD能力匹配',
+      questions: [
+        '如果把企业知识库问答或智能体需求交给你，你会如何拆用户场景、设计流程、定义输入输出和验收指标？',
+        '给你一批用户Badcase，你会如何分类、判断优先级、推动产品或知识库优化？',
+        '如果第一周加入乐享AI团队，你会先补齐哪些业务信息，并产出什么文档、原型或评估表？'
+      ]
+    },
+    {
+      title: '可靠度与风险',
+      questions: [
+        riskSignal
+          ? `AI筛选风险里提到「${riskSignal}」，请你正面回应这个风险，并给一个可验证的例子。`
+          : '讲一次需求不清或时间很紧的任务，你怎么排计划、同步风险、保证交付？',
+        '每周出勤、连续实习周期、课程或论文冲突怎么安排？哪些情况会影响稳定交付？',
+        focusItems.length ? `面试重点追问：${focusItems.join('；')}。请各用一个具体项目证据回答。` : '请举一个能证明你认真、细致、靠谱的项目或工作细节。'
+      ]
+    }
+  ];
+}
+
+function AIInterviewQuestionsPanel({ candidate }) {
+  const groups = buildInterviewQuestionGroups(candidate);
+  return (
+    <section className="panel wide-panel interview-question-panel">
+      <div className="panel-heading">
+        <div>
+          <h3>AI推荐面试问题</h3>
+          <p className="muted">围绕项目真实性、项目理解、JD能力和可靠度追问。</p>
+        </div>
+        {candidate?.screening ? <StatusPill value={displayMatchLevel(candidate.screening.recommendation, candidate.screening.score)} /> : null}
+      </div>
+      <div className="interview-question-grid">
+        {groups.map((group) => (
+          <article key={group.title}>
+            <h4>{group.title}</h4>
+            <ol>
+              {group.questions.map((question, index) => (
+                <li key={`${group.title}-${index}`}>{question}</li>
+              ))}
+            </ol>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ScreeningInsightPanel({ candidate }) {
@@ -3276,6 +3377,7 @@ function App() {
                           </label>
                         </div>
                       </section>
+                      <AIInterviewQuestionsPanel candidate={selected} />
                       <section className="panel">
                         <h3>历史记录</h3>
                         {selected.interviewRecords?.length ? (
