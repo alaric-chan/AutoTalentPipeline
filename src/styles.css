@@ -1219,6 +1219,10 @@ pre {
   margin: 0 0 10px;
 }
 
+.screening .markdown-content {
+  margin: 0 0 10px;
+}
+
 .keyword-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1792,6 +1796,8 @@ pre {
 
 .pill-筛选通过,
 .pill-待邀约,
+.pill-高匹配,
+.pill-较匹配,
 .pill-强推,
 .pill-可面,
 .pill-已预约面试,
@@ -1810,6 +1816,7 @@ pre {
 }
 
 .pill-备选,
+.pill-可培养,
 .pill-待人工确认,
 .pill-面试待确认,
 .pill-待筛选,
@@ -1822,6 +1829,7 @@ pre {
 
 .pill-Offer未接受,
 .pill-淘汰,
+.pill-不匹配,
 .pill-不建议,
 .pill-不推进,
 .pill-不通过 {

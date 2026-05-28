@@ -92,6 +92,26 @@ function StatusPill({ value }) {
   return <span className={`pill pill-${key}`}>{key}</span>;
 }
 
+function displayMatchLevel(value, score) {
+  const text = String(value || '').trim();
+  const legacyMap = {
+    强推: '高匹配',
+    可面: '较匹配',
+    备选: '可培养',
+    不建议: '不匹配'
+  };
+  if (legacyMap[text]) return legacyMap[text];
+  if (['高匹配', '较匹配', '可培养', '不匹配'].includes(text)) return text;
+  const numericScore = Number(score);
+  if (Number.isFinite(numericScore)) {
+    if (numericScore >= 85) return '高匹配';
+    if (numericScore >= 72) return '较匹配';
+    if (numericScore >= 60) return '可培养';
+    return '不匹配';
+  }
+  return text || '待确认';
+}
+
 function NewBadge({ compact = false }) {
   return <span className={`new-badge ${compact ? 'new-badge-compact' : ''}`}>{compact ? '新' : 'New'}</span>;
 }
@@ -186,8 +206,8 @@ const candidateStageViews = ['screening', 'schedule', 'interview', 'onboarding']
 const stageMeta = {
   screening: {
     title: '简历筛选',
-    description: '按 AI 分数、推荐结论和风险备注筛选候选人',
-    columns: ['姓名', '电话', 'AI分', '状态'],
+    description: '按岗位匹配度、可靠度和风险备注筛选候选人',
+    columns: ['姓名', '电话', '匹配分', '状态'],
     columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(58px, 0.72fr)'
   },
   schedule: {
@@ -694,6 +714,27 @@ function MarkdownContent({ value }) {
   return <div className="markdown-content">{blocks}</div>;
 }
 
+function buildScreeningSummaryMarkdown(screening) {
+  if (!screening) return '';
+  const existingSummary = cleanFieldValue(screening.ai_experience_summary);
+  if (/实习经历匹配|院校背景|项目\/AI潜力|可靠度|到岗与时长/.test(existingSummary)) {
+    return existingSummary;
+  }
+  const llmTags = listFromValue(screening.llm_knowledge).slice(0, 5).join('、');
+  const rows = [
+    ['实习经历匹配', screening.internship_match || screening.product_experience || '待面试核实AI产品或产品相邻经历'],
+    ['院校背景', screening.school_assessment || [screening.school, screening.degree].filter(Boolean).join(' / ') || '待补充'],
+    ['项目/AI潜力', screening.project_match || llmTags || '待面试核实AI项目、产品拆解和学习潜力'],
+    ['可靠度', screening.reliability_assessment || '待面试追问稳定交付、承诺兑现、细心程度和目标导向'],
+    ['到岗与时长', screening.availability_assessment || (screening.available_months ? `${screening.available_months}个月` : '待确认是否至少3个月')],
+    ['综合判断', existingSummary || `${displayMatchLevel(screening.recommendation, screening.score)}，匹配分 ${screening.score ?? '待评估'}`]
+  ];
+  return rows
+    .filter(([, value]) => meaningfulValue(value))
+    .map(([label, value]) => `- **${label}**：${cleanFieldValue(value)}`)
+    .join('\n');
+}
+
 function candidateProfileItems(candidate) {
   return [
     ['姓名', candidate?.name || candidateEmail(candidate) || candidate?.id],
@@ -750,7 +791,7 @@ function screeningListStatus(candidate) {
   if (decision === 'pass') return '已通过';
   if (decision === 'reject') return '不通过';
   if (!candidate?.screening) return '待筛';
-  return candidate.screening.recommendation || '待确认';
+  return displayMatchLevel(candidate.screening.recommendation, candidate.screening.score);
 }
 
 function confirmationStatusLabel(status = '') {
@@ -772,12 +813,14 @@ function formalCalendarReady(candidate) {
 }
 
 function statusTone(value) {
-  if (['已通过', '强推', '可面', '候选人已确认', '已预约面试', '已确认发送'].includes(value)) return 'positive';
-  if (['不通过', '不建议', '候选人放弃', '暂不参加'].includes(value)) return 'negative';
+  if (['已通过', '高匹配', '较匹配', '强推', '可面', '候选人已确认', '已预约面试', '已确认发送'].includes(value)) return 'positive';
+  if (['不通过', '不匹配', '不建议', '候选人放弃', '暂不参加'].includes(value)) return 'negative';
   if (
     [
       '待筛',
       '待确认',
+      '可培养',
+      '备选',
       '待安排时间',
       '待发送确认邮件',
       '确认邮件待发送',
@@ -1195,6 +1238,7 @@ function App() {
         candidate.school,
         candidate.messageSubject,
         candidate.screening?.recommendation,
+        displayMatchLevel(candidate.screening?.recommendation, candidate.screening?.score),
         screeningListStatus(candidate),
         reviewText(candidate),
         latestInterviewRecord(candidate)?.decision,
@@ -1635,7 +1679,7 @@ function App() {
 
   async function screenSelected() {
     if (!selected) return;
-    const result = await runAction(selected.screening ? '重跑AI评分' : '筛选简历', () =>
+    const result = await runAction(selected.screening ? '重跑匹配评估' : '岗位匹配评估', () =>
       api(`/api/candidates/${selected.id}/screen`, { method: 'POST' })
     );
     if (result?.id) setSelectedId(result.id);
@@ -1647,7 +1691,7 @@ function App() {
       return;
     }
     const ids = filteredCandidates.map((candidate) => candidate.id);
-    const label = `批量重跑AI评分 ${ids.length}人`;
+    const label = `AI批量评估 ${ids.length}人`;
     const result = await runAction(label, () =>
       api('/api/candidates/screen-batch', {
         method: 'POST',
@@ -2375,7 +2419,7 @@ function App() {
                         className="compact-button"
                         onClick={rescreenCurrentList}
                         disabled={Boolean(busy) || !filteredCandidates.length}
-                        title="按当前搜索和状态筛选结果批量重跑AI评分"
+                        title="按当前搜索和状态筛选结果批量评估岗位匹配度"
                       >
                         <FileSearch size={15} />
                         AI批量评估
@@ -2569,7 +2613,7 @@ function App() {
                         ) : null}
                         <button className="ghost-button" onClick={screenSelected} disabled={Boolean(busy)}>
                           <FileSearch size={16} />
-                          {selected.screening ? '重跑AI评分' : '补跑AI评分'}
+                          {selected.screening ? '重跑匹配评估' : '补跑匹配评估'}
                         </button>
                       </>
                     ) : null}
@@ -2655,16 +2699,16 @@ function App() {
                       <section className="panel decision-panel">
                         <div className="panel-heading">
                           <h3>筛选判断</h3>
-                          <StatusPill value={selected.screening?.recommendation || selected.status || '待筛选'} />
+                          <StatusPill value={selected.screening ? displayMatchLevel(selected.screening.recommendation, selected.screening.score) : selected.status || '待筛选'} />
                         </div>
                         <div className="decision-grid">
                           <div>
-                            <span>AI 分</span>
+                            <span>匹配分</span>
                             <strong>{selected.screening?.score ?? '待筛'}</strong>
                           </div>
                           <div>
-                            <span>推荐等级</span>
-                            <strong>{selected.screening?.recommendation || '待筛选'}</strong>
+                            <span>岗位匹配度</span>
+                            <strong>{selected.screening ? displayMatchLevel(selected.screening.recommendation, selected.screening.score) : '待筛选'}</strong>
                           </div>
                           <div>
                             <span>人工判断</span>
@@ -2677,7 +2721,7 @@ function App() {
                         </div>
                       </section>
                       <section className="panel evidence-panel">
-                        <h3>AI 筛选证据</h3>
+                        <h3>岗位匹配分析</h3>
                         {selected.screening ? (
                           <div className="screening">
                             <div className="score-line">
@@ -2687,7 +2731,7 @@ function App() {
                                 {selected.screening.warning ? ` · ${selected.screening.warning}` : ''}
                               </span>
                             </div>
-                            <p>{selected.screening.ai_experience_summary}</p>
+                            <MarkdownContent value={buildScreeningSummaryMarkdown(selected.screening)} />
                             <div className="keyword-chips">
                               {listFromValue(selected.screening.llm_knowledge).length ? (
                                 listFromValue(selected.screening.llm_knowledge).map((item, index) => <span key={`${item}-${index}`}>{item}</span>)

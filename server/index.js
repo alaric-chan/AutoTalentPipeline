@@ -247,7 +247,7 @@ async function autoScreenNewCandidate(candidate) {
   await addVerificationRun({
     type: 'resume-auto-screen',
     status: 'passed',
-    detail: `${screened.name || screened.email || screened.id}：自动初筛 ${screened.screening.recommendation} / ${screened.screening.score}`,
+    detail: `${screened.name || screened.email || screened.id}：岗位匹配评估 ${screened.screening.recommendation} / ${screened.screening.score}`,
     mode: screened.screening.source
   });
   return screened;
@@ -1099,7 +1099,7 @@ app.post('/api/candidates/screen-batch', asyncRoute(async (req, res) => {
   await addVerificationRun({
     type: 'resume-screen-batch',
     status: failed.length ? 'warning' : 'passed',
-    detail: `批量重跑 ${screened.length}/${targets.length} 位候选人AI评分`,
+    detail: `批量评估 ${screened.length}/${targets.length} 位候选人岗位匹配度`,
     mode: req.currentUser?.username || req.authMode || 'manual'
   });
   res.json({ total: targets.length, screened, failed });
@@ -1204,7 +1204,7 @@ app.post('/api/candidates/:id/screen', asyncRoute(async (req, res) => {
   await addVerificationRun({
     type: 'resume-screen',
     status: 'passed',
-    detail: `${screened.name || screened.email || screened.id}：${screened.screening.recommendation} / ${screened.screening.score}`,
+    detail: `${screened.name || screened.email || screened.id}：岗位匹配评估 ${screened.screening.recommendation} / ${screened.screening.score}`,
     mode: screened.screening.source
   });
   res.json(stripPrivateCandidate(screened, { detail: true }));
@@ -1843,7 +1843,7 @@ app.post('/api/self-test', asyncRoute(async (req, res) => {
     type: 'self-test',
     status: 'passed',
     mode: 'mock',
-    detail: `样例链路通过：导入 -> 筛选 ${screened.screening.recommendation}/${screened.screening.score} -> 面邀预览 -> dry-run 日程`
+    detail: `样例链路通过：导入 -> 岗位匹配评估 ${screened.screening.recommendation}/${screened.screening.score} -> 面邀预览 -> dry-run 日程`
   });
   res.json({
     run,

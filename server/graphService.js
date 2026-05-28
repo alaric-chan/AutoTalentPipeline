@@ -468,7 +468,7 @@ export async function screenCandidate(candidate) {
       ...(candidate.timeline || []),
       {
         at: new Date().toISOString(),
-        action: `完成简历筛选：${screening.recommendation}`,
+        action: `完成岗位匹配评估：${screening.recommendation}`,
         detail: `分数 ${screening.score}，来源 ${screening.source}`
       }
     ]
