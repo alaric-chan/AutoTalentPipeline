@@ -62,6 +62,10 @@ export const config = {
   notifications: {
     lark: {
       enabled: process.env.LARK_NOTIFICATION_ENABLED !== 'false',
+      profile: process.env.LARK_NOTIFICATION_PROFILE || process.env.LARK_CLI_PROFILE || 'cli_a955ff0940789cca',
+      as: process.env.LARK_NOTIFICATION_AS || 'bot',
+      userId: process.env.LARK_NOTIFICATION_USER_ID || '',
+      chatId: process.env.LARK_NOTIFICATION_CHAT_ID || '',
       webhookUrl: process.env.LARK_NOTIFICATION_WEBHOOK_URL || '',
       secret: process.env.LARK_NOTIFICATION_SECRET || '',
       timeoutMs: Number(process.env.LARK_NOTIFICATION_TIMEOUT_MS || 8000)
@@ -133,8 +137,22 @@ export function publicConfigStatus() {
     },
     notifications: {
       lark: {
-        enabled: config.notifications.lark.enabled && Boolean(config.notifications.lark.webhookUrl),
-        configured: Boolean(config.notifications.lark.webhookUrl),
+        enabled:
+          config.notifications.lark.enabled &&
+          Boolean(
+            config.notifications.lark.webhookUrl ||
+              config.notifications.lark.userId ||
+              config.notifications.lark.chatId
+          ),
+        configured: Boolean(
+          config.notifications.lark.webhookUrl || config.notifications.lark.userId || config.notifications.lark.chatId
+        ),
+        channel: config.notifications.lark.chatId || config.notifications.lark.userId ? 'lark-im' : 'lark-webhook',
+        profile: config.notifications.lark.profile,
+        as: config.notifications.lark.as,
+        hasUserTarget: Boolean(config.notifications.lark.userId),
+        hasChatTarget: Boolean(config.notifications.lark.chatId),
+        hasWebhook: Boolean(config.notifications.lark.webhookUrl),
         hasSecret: Boolean(config.notifications.lark.secret)
       }
     },

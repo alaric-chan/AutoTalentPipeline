@@ -1,7 +1,11 @@
 import crypto from 'node:crypto';
-import { config } from './config.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { config, paths } from './config.js';
 import { addVerificationRun, patchCandidate } from './store.js';
 import { buildInterviewContext } from './templates.js';
+
+const execFileAsync = promisify(execFile);
 
 const responseLabels = {
   confirm: '候选人已确认',
@@ -20,7 +24,40 @@ function compact(value) {
 }
 
 function larkNotificationEnabled() {
-  return Boolean(config.notifications.lark.enabled && config.notifications.lark.webhookUrl);
+  return Boolean(
+    config.notifications.lark.enabled &&
+      (config.notifications.lark.webhookUrl || config.notifications.lark.userId || config.notifications.lark.chatId)
+  );
+}
+
+function parseJsonOutput(stdout) {
+  const text = compact(stdout);
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const starts = [];
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] === '{' || text[index] === '[') starts.push(index);
+    }
+    for (const index of starts.reverse()) {
+      try {
+        return JSON.parse(text.slice(index));
+      } catch {
+        // Keep scanning because lark-cli can print warnings before JSON.
+      }
+    }
+  }
+  throw new Error(`飞书 IM 返回内容不是 JSON：${text.slice(0, 240)}`);
+}
+
+function safeErrorOutput(error) {
+  return compact(`${error.stderr || ''}\n${error.stdout || ''}`).slice(0, 2000);
+}
+
+function notificationChannel() {
+  if (config.notifications.lark.chatId || config.notifications.lark.userId) return 'lark-im';
+  return 'lark-webhook';
 }
 
 export function feishuBotSign(timestamp, secret) {
@@ -61,7 +98,7 @@ export function buildCandidateConfirmationNotification(candidate) {
 }
 
 export async function sendLarkWebhookText(text) {
-  if (!larkNotificationEnabled()) {
+  if (!config.notifications.lark.enabled || !config.notifications.lark.webhookUrl) {
     return { status: 'disabled' };
   }
   const body = {
@@ -100,6 +137,50 @@ export async function sendLarkWebhookText(text) {
   }
 }
 
+export async function sendLarkImText(text) {
+  if (!config.notifications.lark.enabled || !(config.notifications.lark.chatId || config.notifications.lark.userId)) {
+    return { status: 'disabled' };
+  }
+  const args = ['im', '+messages-send'];
+  if (config.notifications.lark.profile) args.push('--profile', config.notifications.lark.profile);
+  if (config.notifications.lark.as) args.push('--as', config.notifications.lark.as);
+  if (config.notifications.lark.chatId) {
+    args.push('--chat-id', config.notifications.lark.chatId);
+  } else {
+    args.push('--user-id', config.notifications.lark.userId);
+  }
+  args.push('--text', text);
+  const idempotencyKey = crypto
+    .createHash('sha256')
+    .update(text)
+    .digest('hex')
+    .slice(0, 32);
+  args.push('--idempotency-key', `recruiting-${idempotencyKey}`);
+
+  try {
+    const { stdout } = await execFileAsync(config.lark.cliPath, args, {
+      cwd: paths.root,
+      maxBuffer: 2 * 1024 * 1024,
+      timeout: Math.max(1000, Number(config.notifications.lark.timeoutMs || 8000))
+    });
+    const parsed = parseJsonOutput(stdout);
+    if (parsed?.ok === false) {
+      throw new Error(parsed?.error?.message || parsed?.error || '飞书 IM 通知失败');
+    }
+    return { status: 'sent', response: parsed };
+  } catch (error) {
+    const detail = safeErrorOutput(error);
+    throw new Error(detail || error.message);
+  }
+}
+
+export async function sendLarkNotificationText(text) {
+  if (config.notifications.lark.chatId || config.notifications.lark.userId) {
+    return sendLarkImText(text);
+  }
+  return sendLarkWebhookText(text);
+}
+
 async function markNotification(candidate, notification, timelineEntry) {
   await patchCandidate(candidate.id, {
     interview: {
@@ -125,9 +206,10 @@ export async function notifyCandidateConfirmation(candidate) {
   const now = new Date().toISOString();
   try {
     const text = buildCandidateConfirmationNotification(candidate);
-    const result = await sendLarkWebhookText(text);
+    const channel = notificationChannel();
+    const result = await sendLarkNotificationText(text);
     const notification = {
-      channel: 'lark-webhook',
+      channel,
       status: result.status,
       eventKey,
       sentAt: now
@@ -141,12 +223,13 @@ export async function notifyCandidateConfirmation(candidate) {
       type: 'lark-confirmation-notification',
       status: 'passed',
       detail: `${candidate.name || candidate.email || candidate.id}：飞书确认提醒已发送`,
-      mode: 'lark-webhook'
+      mode: channel
     });
     return notification;
   } catch (error) {
+    const channel = notificationChannel();
     const notification = {
-      channel: 'lark-webhook',
+      channel,
       status: 'failed',
       eventKey,
       failedAt: now,
@@ -161,7 +244,7 @@ export async function notifyCandidateConfirmation(candidate) {
       type: 'lark-confirmation-notification',
       status: 'failed',
       detail: `${candidate.name || candidate.email || candidate.id}：${notification.error}`,
-      mode: 'lark-webhook'
+      mode: channel
     }).catch(() => {});
     throw error;
   }

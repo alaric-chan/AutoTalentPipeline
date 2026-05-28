@@ -198,7 +198,18 @@ LARK_SYNC_LIMIT=100
 
 ### 2.1 飞书面试确认提醒
 
-候选人在确认页点击“确认参加 / 申请改期 / 暂不参加”后，平台可以通过飞书群机器人即时推送提醒。先在飞书群里添加自定义机器人，把 Webhook URL 写入 `.env`：
+候选人在确认页点击“确认参加 / 申请改期 / 暂不参加”后，平台可以通过飞书即时推送提醒。推荐优先使用招聘应用机器人私信管理员，填入目标用户 open_id；如果希望推到群里，也可以填群 chat_id：
+
+```bash
+LARK_NOTIFICATION_ENABLED=true
+LARK_NOTIFICATION_PROFILE=cli_a955ff0940789cca
+LARK_NOTIFICATION_AS=bot
+LARK_NOTIFICATION_USER_ID=ou_xxx
+LARK_NOTIFICATION_CHAT_ID=
+LARK_NOTIFICATION_TIMEOUT_MS=8000
+```
+
+如果没有 IM 目标，也可以在飞书群里添加自定义机器人，把 Webhook URL 写入 `.env`：
 
 ```bash
 LARK_NOTIFICATION_ENABLED=true
@@ -207,7 +218,7 @@ LARK_NOTIFICATION_SECRET=
 LARK_NOTIFICATION_TIMEOUT_MS=8000
 ```
 
-如果机器人启用了“签名校验”，把密钥填到 `LARK_NOTIFICATION_SECRET`。通知发送是异步的：候选人提交结果会先落库，飞书提醒失败不会影响候选人页面，但会写入操作日志和候选人时间线。
+如果群机器人启用了“签名校验”，把密钥填到 `LARK_NOTIFICATION_SECRET`。通知发送是异步的：候选人提交结果会先落库，飞书提醒失败不会影响候选人页面，但会写入操作日志和候选人时间线。
 
 ### 3. 历史面试表回填
 
