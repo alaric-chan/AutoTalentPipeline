@@ -215,7 +215,8 @@ const stageMeta = {
   schedule: {
     title: '面试安排',
     description: '先发时间确认邮件，候选人确认后再发 Outlook/Teams 日程',
-    columns: ['姓名', '联系方式', '面试时间', '状态']
+    columns: ['姓名', '联系方式', '面试时间', '状态'],
+    columnTemplate: 'minmax(72px, 0.9fr) minmax(80px, 1.1fr) minmax(62px, 0.72fr) minmax(58px, 0.72fr)'
   },
   interview: {
     title: '面试记录',
@@ -1204,7 +1205,8 @@ function candidateScheduleStatus(candidate) {
     return label;
   }
   if (candidate?.interview?.start) return '待发送确认邮件';
-  return candidate?.status || (candidate?.manualReview?.decision === 'pass' ? '待安排时间' : '待邀约');
+  if (candidate?.manualReview?.decision === 'pass') return '待安排时间';
+  return candidate?.status || '待邀约';
 }
 
 function candidateScheduleTime(candidate) {
@@ -1236,6 +1238,8 @@ function statusTone(value) {
       '可培养',
       '备选',
       '待安排时间',
+      '待记录',
+      '待跟进',
       '待发送确认邮件',
       '确认邮件待发送',
       '等待候选人确认',
@@ -1261,7 +1265,7 @@ function filterCandidatesByStage(candidates, view) {
     return candidates.filter((candidate) =>
       candidate.manualReview?.decision === 'pass' ||
       candidate.interview ||
-      /待邀约|面试|确认|改期|已邀约|已预约|Outlook/i.test(candidate.status || '')
+      /待邀约|面试|改期|已邀约|已预约|候选人已确认|等待候选人确认|Outlook/i.test(candidate.status || '')
     );
   }
   if (view === 'interview') {
@@ -1321,11 +1325,226 @@ function stageCells(candidate, view) {
   ];
 }
 
+function stageFilterStatus(candidate, view) {
+  const record = latestInterviewRecord(candidate);
+  if (view === 'screening') return screeningListStatus(candidate);
+  if (view === 'schedule') return candidateScheduleStatus(candidate);
+  if (view === 'interview') return record?.decision || (applicationField(candidate, ['面试评价']) ? '已有面评' : '待记录');
+  if (view === 'onboarding') return candidateOfferStatus(candidate);
+  return candidate?.status || '待处理';
+}
+
 function reviewText(candidate) {
   const decision = candidate?.manualReview?.decision;
   if (decision === 'pass') return '已通过';
   if (decision === 'reject') return '不通过';
   return '待确认';
+}
+
+function workflowViewLabel(view) {
+  if (view === 'overview') return '总览';
+  if (view === 'intake') return '投递采集';
+  return stageMeta[view]?.title || '当前环节';
+}
+
+function candidateJourneySteps(candidate) {
+  const record = latestInterviewRecord(candidate);
+  const review = candidate?.manualReview?.decision;
+  const confirmationStatus = candidate?.interview?.confirmation?.status;
+  const inviteStatus = candidate?.interview?.inviteStatus;
+  const scheduled = ['web-sent-confirmed', 'graph-sent'].includes(inviteStatus);
+  const offerStatus = candidateOfferStatus(candidate);
+  const hasOfferRecord = Boolean(candidate?.offer || candidate?.offerRecords?.length);
+
+  return [
+    {
+      view: 'intake',
+      label: '入库',
+      status: candidate ? '已入库' : '未开始',
+      tone: candidate ? 'done' : 'pending'
+    },
+    {
+      view: 'screening',
+      label: '筛选',
+      status: review === 'pass' ? '已通过' : review === 'reject' ? '不通过' : candidate?.screening ? '待判断' : '待评估',
+      tone: review === 'pass' ? 'done' : review === 'reject' ? 'stopped' : 'current'
+    },
+    {
+      view: 'schedule',
+      label: '面邀',
+      status: scheduled ? '已预约' : candidateScheduleStatus(candidate),
+      tone: scheduled ? 'done' : review === 'pass' || candidate?.interview ? 'current' : 'pending'
+    },
+    {
+      view: 'interview',
+      label: '面评',
+      status: record ? record.decision || '已记录' : scheduled ? '待记录' : '未开始',
+      tone: record ? 'done' : scheduled ? 'current' : 'pending'
+    },
+    {
+      view: 'onboarding',
+      label: 'Offer',
+      status: hasOfferRecord ? offerStatus : record ? '待跟进' : '未开始',
+      tone: hasOfferRecord ? 'done' : record ? 'current' : 'pending'
+    }
+  ];
+}
+
+function candidateNextAction(candidate) {
+  if (!candidate) return null;
+  const review = candidate.manualReview?.decision;
+  const confirmationStatus = candidate.interview?.confirmation?.status;
+  const inviteStatus = candidate.interview?.inviteStatus;
+  const scheduled = ['web-sent-confirmed', 'graph-sent'].includes(inviteStatus);
+  const record = latestInterviewRecord(candidate);
+  const hasOfferRecord = Boolean(candidate.offer || candidate.offerRecords?.length);
+
+  if (review === 'reject') {
+    return {
+      title: '流程已结束',
+      description: '已标记不通过。需要恢复时先撤销判断，再重新推进。',
+      targetView: 'screening',
+      tone: 'stopped'
+    };
+  }
+  if (!candidate.screening) {
+    return {
+      title: '完成岗位匹配评估',
+      description: '先生成匹配分、风险点和追问方向，再做人工判断。',
+      targetView: 'screening',
+      tone: 'current'
+    };
+  }
+  if (!review) {
+    return {
+      title: '做人工筛选判断',
+      description: '核对 AI 分析和简历原文，决定通过或不通过。',
+      targetView: 'screening',
+      tone: 'current'
+    };
+  }
+  if (!candidate.interview?.start) {
+    return {
+      title: '安排面试时间',
+      description: '选择可用时间，生成面邀预览并打开确认邮件草稿。',
+      targetView: 'schedule',
+      tone: 'current'
+    };
+  }
+  if (scheduled) {
+    if (!record) {
+      return {
+        title: '记录面试结论',
+        description: '面试结束后补齐评分、优势风险和下一步动作。',
+        targetView: 'interview',
+        tone: 'current'
+      };
+    }
+    if (!hasOfferRecord) {
+      return {
+        title: '进入 Offer 跟进',
+        description: '根据面试结论记录 Offer 状态、到岗时间和跟进备注。',
+        targetView: 'onboarding',
+        tone: 'current'
+      };
+    }
+    return {
+      title: '跟进入职材料',
+      description: '持续更新 Offer 接受情况、入职时间和材料收集状态。',
+      targetView: 'onboarding',
+      tone: 'done'
+    };
+  }
+  if (!confirmationStatus) {
+    return {
+      title: '打开确认邮件草稿',
+      description: '时间已选定，先让候选人确认是否参加。',
+      targetView: 'schedule',
+      tone: 'current'
+    };
+  }
+  if (confirmationStatus === 'mail-draft-generated') {
+    return {
+      title: '标记确认邮件已发送',
+      description: '在 Outlook 发出确认邮件后回到平台标记，进入候选人等待状态。',
+      targetView: 'schedule',
+      tone: 'pending'
+    };
+  }
+  if (confirmationStatus === 'pending') {
+    return {
+      title: '等待候选人确认',
+      description: '候选人确认后，再发送正式 Outlook/Teams 日程邀请。',
+      targetView: 'schedule',
+      tone: 'pending'
+    };
+  }
+  if (confirmationStatus === 'reschedule_requested') {
+    return {
+      title: '处理候选人改期',
+      description: '根据候选人留言重新选择时间，线下确认后再发正式日程。',
+      targetView: 'schedule',
+      tone: 'pending'
+    };
+  }
+  if (confirmationStatus === 'declined') {
+    return {
+      title: '候选人暂不参加',
+      description: '可重新沟通或结束本轮面试安排。',
+      targetView: 'schedule',
+      tone: 'stopped'
+    };
+  }
+  if (!scheduled) {
+    return {
+      title: '发送正式日程',
+      description: '候选人已确认时间，打开 Outlook/Teams 日程邀请并发送。',
+      targetView: 'schedule',
+      tone: 'current'
+    };
+  }
+  return {
+    title: '检查面试安排',
+    description: '当前候选人已有面试链路，请核对状态后继续推进。',
+    targetView: 'schedule',
+    tone: 'current'
+  };
+}
+
+function scheduleFlowSteps(candidate, interviewHasStart, officialInviteSent) {
+  const confirmationStatus = candidate?.interview?.confirmation?.status;
+  const hasConfirmation = Boolean(candidate?.interview?.confirmation?.url || confirmationStatus);
+  const candidateConfirmed = officialInviteSent || ['confirmed', 'offline_confirmed'].includes(confirmationStatus);
+  const candidateStopped = ['reschedule_requested', 'declined'].includes(confirmationStatus);
+  const record = latestInterviewRecord(candidate);
+
+  return [
+    {
+      label: '选时间',
+      detail: interviewHasStart ? formatDateTime(candidate?.interview?.start) : '待选择',
+      tone: interviewHasStart ? 'done' : 'current'
+    },
+    {
+      label: '确认邮件',
+      detail: hasConfirmation ? confirmationStatusLabel(confirmationStatus) : officialInviteSent ? '已跳过' : '待打开草稿',
+      tone: hasConfirmation || officialInviteSent ? 'done' : interviewHasStart ? 'current' : 'pending'
+    },
+    {
+      label: '候选确认',
+      detail: candidateStopped ? confirmationStatusLabel(confirmationStatus) : candidateConfirmed ? '已确认' : '等待反馈',
+      tone: candidateStopped ? 'blocked' : candidateConfirmed ? 'done' : hasConfirmation ? 'current' : 'pending'
+    },
+    {
+      label: '正式日程',
+      detail: officialInviteSent ? '已发送' : '待发送',
+      tone: officialInviteSent ? 'done' : candidateConfirmed ? 'current' : 'pending'
+    },
+    {
+      label: '面试记录',
+      detail: record ? record.decision || '已记录' : '待记录',
+      tone: record ? 'done' : officialInviteSent ? 'current' : 'pending'
+    }
+  ];
 }
 
 function nextCandidateIdAfterCurrent(candidates, currentId) {
@@ -1438,6 +1657,93 @@ function Metric({ icon, label, value }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function WorkflowRail({ activeView, counts, onNavigate }) {
+  const items = [
+    { view: 'intake', label: '投递采集', value: counts.intake, icon: <Database size={16} /> },
+    { view: 'screening', label: '简历筛选', value: counts.screening, icon: <FileSearch size={16} /> },
+    { view: 'schedule', label: '面试安排', value: counts.schedule, icon: <CalendarPlus size={16} /> },
+    { view: 'interview', label: '面试记录', value: counts.interview, icon: <ListChecks size={16} /> },
+    { view: 'onboarding', label: 'Offer/入职', value: counts.onboarding, icon: <CheckCircle2 size={16} /> }
+  ];
+
+  return (
+    <section className="journey-rail" aria-label="招聘旅程">
+      <div className="journey-rail-title">
+        <span>招聘旅程</span>
+        <strong>{workflowViewLabel(activeView)}</strong>
+      </div>
+      <div className="journey-rail-steps">
+        {items.map((item, index) => (
+          <button
+            key={item.view}
+            className={`journey-step ${activeView === item.view ? 'active' : ''}`}
+            onClick={() => onNavigate(item.view)}
+            type="button"
+          >
+            <span className="journey-step-index">{index + 1}</span>
+            {item.icon}
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CandidateJourneyCard({ candidate, activeView, onNavigate }) {
+  const nextAction = candidateNextAction(candidate);
+  const steps = candidateJourneySteps(candidate);
+  if (!nextAction) return null;
+
+  return (
+    <section className="candidate-journey">
+      <div className="candidate-journey-steps" aria-label="候选人进度">
+        {steps.map((step) => (
+          <button
+            key={step.view}
+            className={`candidate-step candidate-step-${step.tone} ${activeView === step.view ? 'active' : ''}`}
+            onClick={() => onNavigate(step.view)}
+            type="button"
+          >
+            <span>{step.label}</span>
+            <strong>{step.status}</strong>
+          </button>
+        ))}
+      </div>
+      <div className={`next-action next-action-${nextAction.tone}`}>
+        <div>
+          <span>下一步</span>
+          <strong>{nextAction.title}</strong>
+          <p>{nextAction.description}</p>
+        </div>
+        {nextAction.targetView && nextAction.targetView !== activeView ? (
+          <button className="ghost-button compact-button" onClick={() => onNavigate(nextAction.targetView)} type="button">
+            进入{workflowViewLabel(nextAction.targetView)}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleFlow({ candidate, interviewHasStart, officialInviteSent }) {
+  const steps = scheduleFlowSteps(candidate, interviewHasStart, officialInviteSent);
+  return (
+    <section className="schedule-flow" aria-label="面试安排步骤">
+      {steps.map((step, index) => (
+        <div key={step.label} className={`schedule-flow-step schedule-flow-step-${step.tone}`}>
+          <span>{index + 1}</span>
+          <div>
+            <strong>{step.label}</strong>
+            <small>{step.detail}</small>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -1643,19 +1949,21 @@ function App() {
   );
 
   const statusOptions = useMemo(
-    () => ['全部', ...Array.from(new Set(stageCandidates.map((item) => item.status).filter(Boolean)))],
-    [stageCandidates]
+    () => ['全部', ...Array.from(new Set(stageCandidates.map((item) => stageFilterStatus(item, activeView)).filter(Boolean)))],
+    [activeView, stageCandidates]
   );
 
   const filteredCandidates = useMemo(() => {
     const query = candidateQuery.trim().toLowerCase();
     return stageCandidates.filter((candidate) => {
-      const statusMatched = statusFilter === '全部' || candidate.status === statusFilter;
+      const stageStatus = stageFilterStatus(candidate, activeView);
+      const statusMatched = statusFilter === '全部' || stageStatus === statusFilter;
       const haystack = [
         candidate.name,
         candidateEmail(candidate),
         candidatePhone(candidate),
         candidate.status,
+        stageStatus,
         candidate.source,
         candidate.school,
         candidate.messageSubject,
@@ -1671,7 +1979,7 @@ function App() {
         .toLowerCase();
       return statusMatched && (!query || haystack.includes(query));
     });
-  }, [candidateQuery, stageCandidates, statusFilter]);
+  }, [activeView, candidateQuery, stageCandidates, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
   const page = Math.min(candidatePage, totalPages);
@@ -1687,6 +1995,7 @@ function App() {
     (candidate) => /offer|入职/i.test(candidate.status || '') || candidate.offer || candidate.offerRecords?.length
   ).length;
   const pipelineCounts = {
+    intake: candidates.length,
     screening: filterCandidatesByStage(candidates, 'screening').length,
     schedule: filterCandidatesByStage(candidates, 'schedule').length,
     interview: filterCandidatesByStage(candidates, 'interview').length,
@@ -1742,7 +2051,7 @@ function App() {
   }
 
   function scrollDetailIntoViewOnMobile() {
-    if (!window.matchMedia?.('(max-width: 760px)').matches) return;
+    if (!window.matchMedia?.('(max-width: 1180px)').matches) return;
     window.requestAnimationFrame(() => {
       document.querySelector('.detail-pane')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -2182,7 +2491,10 @@ function App() {
       setSelectedId(nextScreeningCandidateId || result.id);
       const nextIndex = filteredCandidates.findIndex((candidate) => candidate.id === nextScreeningCandidateId);
       if (nextIndex >= 0) setCandidatePage(Math.floor(nextIndex / pageSize) + 1);
-      if (decision === 'pass') setActiveView('screening');
+      if (decision === 'pass') {
+        setNotice(nextScreeningCandidateId ? '已通过，继续筛选下一位；需要排期时进入面试安排。' : '已通过，已切到面试安排继续排期。');
+        setActiveView(nextScreeningCandidateId ? 'screening' : 'schedule');
+      }
       if (decision === 'reject') setActiveView('screening');
       if (decision === 'undo') setActiveView('screening');
     }
@@ -2513,6 +2825,8 @@ function App() {
   const outlookConnected = Boolean(health?.outlook?.connected);
   const interviewHasStart = Boolean(interview.start);
   const officialInviteSent = ['web-sent-confirmed', 'graph-sent'].includes(selected?.interview?.inviteStatus);
+  const selectedInterviewRecord = latestInterviewRecord(selected);
+  const selectedHasOfferRecord = Boolean(selected?.offer || selected?.offerRecords?.length);
   const confirmationCompleted = ['confirmed', 'offline_confirmed', 'declined'].includes(selected?.interview?.confirmation?.status);
   const confirmationMailSentVisible =
     selected?.interview?.confirmation?.status === 'mail-draft-generated' && !officialInviteSent;
@@ -2530,7 +2844,24 @@ function App() {
     (!formalCalendarReady(selected) && !offlineTimeConfirmationNeeded) ||
     (officialInviteSent && !offlineTimeConfirmationNeeded);
   const interviewScheduleDisabled =
-    Boolean(busy) || !interviewHasStart || !outlookConnected || (interview.live && !formalCalendarReady(selected));
+    Boolean(busy) || !interviewHasStart || (interview.live && (!outlookConnected || !formalCalendarReady(selected)));
+  const scheduleActionHint = !interviewHasStart
+    ? '先选择面试开始时间，再生成预览或打开确认邮件草稿。'
+    : !candidateHasEmail(selected)
+      ? '候选人缺少邮箱，先在投递档案里补齐联系邮箱。'
+      : interview.live && !outlookConnected
+        ? 'Graph 真实创建需要先连接 Outlook；预定检查不依赖 Outlook 连接。'
+        : interview.live && !formalCalendarReady(selected)
+          ? '候选人确认时间后，才能执行 Graph 真实创建。'
+          : officialInviteSent && selectedHasOfferRecord
+            ? '日程和面试记录已完成，可进入 Offer/入职跟进材料。'
+            : officialInviteSent && selectedInterviewRecord
+              ? '日程和面试记录已完成，可进入 Offer/入职继续跟进。'
+              : officialInviteSent && !offlineTimeConfirmationNeeded
+                ? '正式日程已发送，下一步是面试后记录结论。'
+            : !formalCalendarReady(selected) && !offlineTimeConfirmationNeeded
+              ? '候选人确认时间后，再发送正式 Outlook/Teams 日程。'
+              : '';
   const scheduleUndoVisible =
     selected?.manualReview && !selected?.interview?.confirmation && !selected?.interview?.inviteStatus && !selected?.interview?.start;
   const bailianReady = Boolean(health?.config?.bailian?.hasApiKey);
@@ -2681,6 +3012,10 @@ function App() {
             </button>
           </div>
         </header>
+
+        {activeView === 'intake' || candidateStageViews.includes(activeView) ? (
+          <WorkflowRail activeView={activeView} counts={pipelineCounts} onNavigate={setActiveView} />
+        ) : null}
 
         {showStatusBand ? (
           <section className="status-band">
@@ -3099,6 +3434,8 @@ function App() {
                     <StatusPill value={activeView === 'schedule' ? candidateScheduleStatus(selected) : selected.status} />
                   </div>
 
+                  <CandidateJourneyCard candidate={selected} activeView={activeView} onNavigate={setActiveView} />
+
                   <div className={`actions-row ${activeView === 'screening' ? 'screening-action-bar' : ''}`}>
                     {hasCandidateSwitcher ? (
                       <div className="mobile-candidate-switcher">
@@ -3172,15 +3509,15 @@ function App() {
                           title={
                             !interviewHasStart
                               ? '请先为当前候选人选择面试时间。'
-                              : !outlookConnected
-                              ? 'Outlook 未连接，不能执行预定验证或真实创建。'
+                              : interview.live && !outlookConnected
+                              ? 'Outlook 未连接，不能执行真实创建。'
                               : interview.live && !formalCalendarReady(selected)
                                 ? '候选人确认面试时间后，再执行真实创建。'
                                 : undefined
                           }
                         >
                           <CalendarPlus size={16} />
-                          {interview.live ? 'Graph真实创建' : 'dry-run 预定'}
+                          {interview.live ? 'Graph真实创建' : '预定检查'}
                         </button>
                         <button
                           onClick={openInterviewConfirmationMail}
@@ -3196,7 +3533,7 @@ function App() {
                           }
                         >
                           <Mail size={16} />
-                          发送确认邮件
+                          打开确认邮件草稿
                         </button>
                         {confirmationMailSentVisible ? (
                           <button className="ghost-button" onClick={confirmInterviewConfirmationMailSent} disabled={Boolean(busy)}>
@@ -3246,6 +3583,7 @@ function App() {
                             撤销通过
                           </button>
                         ) : null}
+                        {scheduleActionHint ? <p className="action-hint">{scheduleActionHint}</p> : null}
                       </>
                     ) : null}
                     {activeView === 'interview' ? (
@@ -3347,6 +3685,8 @@ function App() {
                   ) : null}
 
                   {activeView === 'schedule' ? (
+                    <>
+                    <ScheduleFlow candidate={selected} interviewHasStart={interviewHasStart} officialInviteSent={officialInviteSent} />
                     <div className="detail-columns">
                       <section className="panel">
                         <h3>面试安排</h3>
@@ -3471,7 +3811,7 @@ function App() {
                             ) : null}
                           </div>
                         ) : (
-                          <p className="muted">先选择面试时间，再生成预览、dry-run 或 Outlook 日程邀请。</p>
+                          <p className="muted">先选择面试时间，再生成预览、预定检查或 Outlook 日程邀请。</p>
                         )}
                       </section>
 
@@ -3517,6 +3857,7 @@ function App() {
                         </div>
                       </section>
                     </div>
+                    </>
                   ) : null}
 
                   {activeView === 'interview' ? (
