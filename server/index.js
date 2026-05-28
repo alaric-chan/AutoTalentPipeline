@@ -19,9 +19,11 @@ import {
   listUsers,
   listVerificationRuns,
   newId,
+  normalizeProfileOverrideFields,
   patchCandidate,
   patchSettings,
   patchUser,
+  PROFILE_OVERRIDE_ORDER,
   upsertUser,
   upsertCandidate
 } from './store.js';
@@ -457,6 +459,63 @@ function cleanProfilePhone(value = '') {
   return cleanProfileText(value, 40);
 }
 
+const PROFILE_EDIT_FIELD_CONFIG = {
+  name: {
+    topLevel: 'name',
+    aliases: ['姓名', '名字', '候选人', '应聘者', 'Name']
+  },
+  email: {
+    topLevel: 'email',
+    aliases: ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email']
+  },
+  phone: {
+    topLevel: 'phone',
+    aliases: ['联系电话', '手机', '电话', '手机号', '联系方式']
+  },
+  degree: {
+    topLevel: 'degree',
+    aliases: ['学历', '学位', '最高学历', 'Degree']
+  },
+  schoolBackground: {
+    topLevel: 'school',
+    aliases: ['院校背景', '教育背景', '学校背景', '学校', '院校', '毕业院校', 'School']
+  },
+  receivedAt: {
+    topLevel: 'receivedAt',
+    aliases: ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间']
+  },
+  arrival: {
+    aliases: ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗']
+  },
+  duration: {
+    aliases: ['可实习时长', '实习时长', '可实习月份']
+  }
+};
+
+function applicationProfileValue(candidate, aliases = []) {
+  const fields = candidate?.application?.fields || {};
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(fields, alias)) return fields[alias];
+  }
+  return '';
+}
+
+function candidateProfileValue(candidate, field) {
+  const config = PROFILE_EDIT_FIELD_CONFIG[field];
+  if (!config) return '';
+  if (field === 'schoolBackground') {
+    return applicationProfileValue(candidate, config.aliases) || candidate?.[config.topLevel] || '';
+  }
+  const topLevelValue = config.topLevel ? candidate?.[config.topLevel] : '';
+  const value = topLevelValue || applicationProfileValue(candidate, config.aliases);
+  if (field === 'email') return parseEmailAddress(value) || cleanProfileText(value, 160);
+  return cleanProfileText(value, 240);
+}
+
+function profileValueChanged(previous, next) {
+  return cleanProfileText(previous, 240) !== cleanProfileText(next, 240);
+}
+
 function firstExistingField(fields, aliases, fallback) {
   return aliases.find((alias) => Object.prototype.hasOwnProperty.call(fields, alias)) || fallback;
 }
@@ -471,7 +530,7 @@ function updateField(fields, aliases, fallback, value) {
   return key;
 }
 
-function buildProfilePatch(candidate, body = {}) {
+function buildProfilePatch(candidate, body = {}, { editor = 'manual' } = {}) {
   const hasBodyField = (key) => Object.prototype.hasOwnProperty.call(body, key);
   const fields = { ...(candidate.application?.fields || {}) };
   const picked = { ...(candidate.application?.picked || {}) };
@@ -485,9 +544,18 @@ function buildProfilePatch(candidate, body = {}) {
   };
   const patch = {};
   const detailParts = [];
+  const now = new Date().toISOString();
+  const manualFields = new Set(normalizeProfileOverrideFields(candidate.profileOverrides));
+  const changedManualFields = new Set();
+  const markManualOverride = (field, nextValue) => {
+    if (!profileValueChanged(candidateProfileValue(candidate, field), nextValue)) return;
+    manualFields.add(field);
+    changedManualFields.add(field);
+  };
 
   if (hasBodyField('name')) {
     const name = cleanProfileText(body.name, 48);
+    markManualOverride('name', name);
     patch.name = name;
     nextCandidate.name = name;
     picked.name = updateField(fields, ['姓名', '名字', '候选人', '应聘者', 'Name'], picked.name || '姓名', name);
@@ -495,6 +563,7 @@ function buildProfilePatch(candidate, body = {}) {
   }
   if (hasBodyField('email')) {
     const email = cleanProfileEmail(body.email);
+    markManualOverride('email', email);
     patch.email = email;
     nextCandidate.email = email;
     picked.email = updateField(fields, ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email'], picked.email || '联系邮箱', email);
@@ -502,6 +571,7 @@ function buildProfilePatch(candidate, body = {}) {
   }
   if (hasBodyField('phone')) {
     const phone = cleanProfilePhone(body.phone);
+    markManualOverride('phone', phone);
     patch.phone = phone;
     nextCandidate.phone = phone;
     picked.phone = updateField(fields, ['联系电话', '手机', '电话', '手机号', '联系方式'], picked.phone || '联系电话', phone);
@@ -509,24 +579,31 @@ function buildProfilePatch(candidate, body = {}) {
   }
   if (hasBodyField('degree')) {
     const degree = cleanProfileText(body.degree, 80);
+    markManualOverride('degree', degree);
     patch.degree = degree;
     nextCandidate.degree = degree;
     updateField(fields, ['学历', '学位', '最高学历', 'Degree'], '学历', degree);
   }
   if (hasBodyField('schoolBackground')) {
     const schoolBackground = cleanProfileText(body.schoolBackground, 160);
+    markManualOverride('schoolBackground', schoolBackground);
     patch.school = schoolBackground || candidate.school || '';
     nextCandidate.school = patch.school;
     updateField(fields, ['院校背景', '教育背景', '学校背景'], '院校背景', schoolBackground);
   }
   if (hasBodyField('arrival')) {
-    updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', cleanProfileText(body.arrival, 80));
+    const arrival = cleanProfileText(body.arrival, 80);
+    markManualOverride('arrival', arrival);
+    updateField(fields, ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗'], '最快到岗时间', arrival);
   }
   if (hasBodyField('duration')) {
-    updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', cleanProfileText(body.duration, 80));
+    const duration = cleanProfileText(body.duration, 80);
+    markManualOverride('duration', duration);
+    updateField(fields, ['可实习时长', '实习时长', '可实习月份'], '可实习时长', duration);
   }
   if (hasBodyField('receivedAt')) {
     const receivedAt = cleanProfileText(body.receivedAt, 80);
+    markManualOverride('receivedAt', receivedAt);
     patch.receivedAt = receivedAt;
     nextCandidate.receivedAt = receivedAt;
     updateField(fields, ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间'], '投递时间', receivedAt);
@@ -534,10 +611,18 @@ function buildProfilePatch(candidate, body = {}) {
 
   patch.application = nextCandidate.application;
   patch.identityKey = candidateIdentityKey(nextCandidate);
+  if (manualFields.size) {
+    patch.profileOverrides = {
+      ...(candidate.profileOverrides || {}),
+      fields: PROFILE_OVERRIDE_ORDER.filter((field) => manualFields.has(field)),
+      updatedAt: changedManualFields.size ? now : candidate.profileOverrides?.updatedAt || now,
+      updatedBy: changedManualFields.size ? editor : candidate.profileOverrides?.updatedBy || editor
+    };
+  }
   patch.timeline = [
     ...(candidate.timeline || []),
     {
-      at: new Date().toISOString(),
+      at: now,
       action: '编辑候选人投递档案',
       detail: detailParts.join(' · ')
     }
@@ -1118,7 +1203,9 @@ app.get('/api/candidates/:id', asyncRoute(async (req, res) => {
 
 app.patch('/api/candidates/:id/profile', asyncRoute(async (req, res) => {
   const candidate = requireCandidate(await getCandidate(req.params.id));
-  const patch = buildProfilePatch(candidate, req.body || {});
+  const patch = buildProfilePatch(candidate, req.body || {}, {
+    editor: req.currentUser?.username || req.authMode || 'manual'
+  });
   const updated = await patchCandidate(candidate.id, patch);
   await addVerificationRun({
     type: 'candidate-profile-edit',

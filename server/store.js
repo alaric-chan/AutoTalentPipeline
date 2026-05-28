@@ -69,6 +69,77 @@ function normalizePhone(value = '') {
   return String(value).replace(/\D/g, '');
 }
 
+export const PROFILE_OVERRIDE_ORDER = [
+  'name',
+  'email',
+  'phone',
+  'degree',
+  'schoolBackground',
+  'receivedAt',
+  'arrival',
+  'duration'
+];
+
+const PROFILE_OVERRIDE_FIELD_CONFIG = {
+  name: {
+    topLevel: 'name',
+    picked: 'name',
+    aliases: ['姓名', '名字', '候选人', '应聘者', 'Name']
+  },
+  email: {
+    topLevel: 'email',
+    picked: 'email',
+    aliases: ['联系邮箱', '邮箱', '电子邮箱', 'Email', 'email']
+  },
+  phone: {
+    topLevel: 'phone',
+    picked: 'phone',
+    aliases: ['联系电话', '手机', '电话', '手机号', '联系方式', 'Phone']
+  },
+  degree: {
+    topLevel: 'degree',
+    picked: 'degree',
+    aliases: ['学历', '学位', '最高学历', 'Degree']
+  },
+  schoolBackground: {
+    topLevel: 'school',
+    picked: 'school',
+    aliases: ['院校背景', '教育背景', '学校背景', '学校', '院校', '毕业院校', 'School']
+  },
+  receivedAt: {
+    topLevel: 'receivedAt',
+    picked: 'submittedAt',
+    aliases: ['投递时间', '提交时间', '提交日期', '创建时间', '导入时间', '收集时间', '报名时间', 'Submitted At']
+  },
+  arrival: {
+    picked: 'arrival',
+    aliases: ['最快到岗时间', '预计入职时间', '到岗时间', '最快到岗', '入职时间', 'Arrival']
+  },
+  duration: {
+    picked: 'duration',
+    aliases: ['可实习时长', '实习时长', '可实习月份', 'Internship Duration']
+  }
+};
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+export function normalizeProfileOverrideFields(profileOverrides = {}) {
+  profileOverrides = profileOverrides || {};
+  const rawFields = Array.isArray(profileOverrides)
+    ? profileOverrides
+    : Array.isArray(profileOverrides.fields)
+      ? profileOverrides.fields
+      : profileOverrides.fields && typeof profileOverrides.fields === 'object'
+        ? Object.entries(profileOverrides.fields)
+            .filter(([, enabled]) => Boolean(enabled))
+            .map(([field]) => field)
+        : [];
+  const fields = new Set(rawFields.map((field) => String(field || '').trim()).filter(Boolean));
+  return PROFILE_OVERRIDE_ORDER.filter((field) => fields.has(field));
+}
+
 function firstApplicationValue(candidate, names) {
   const fields = candidate?.application?.fields || {};
   for (const name of names) {
@@ -108,6 +179,90 @@ function mergeTimeline(existingTimeline = [], incomingTimeline = []) {
   });
 }
 
+function cloneApplication(application = {}) {
+  return {
+    ...application,
+    fields: { ...(application.fields || {}) },
+    picked: { ...(application.picked || {}) }
+  };
+}
+
+function preserveApplicationOverride(existing, merged, field) {
+  const config = PROFILE_OVERRIDE_FIELD_CONFIG[field];
+  if (!config?.aliases?.length) return merged;
+
+  const existingApplication = existing.application || {};
+  const existingFields = existingApplication.fields || {};
+  const application = cloneApplication(merged.application || {});
+  const existingPickedKey = config.picked ? existingApplication.picked?.[config.picked] : '';
+  const incomingPickedKey = config.picked ? application.picked?.[config.picked] : '';
+  const existingKey =
+    [existingPickedKey, ...config.aliases].find((key) => key && hasOwn(existingFields, key)) ||
+    existingPickedKey ||
+    config.aliases[0];
+  const targetKey =
+    [incomingPickedKey, existingKey, ...config.aliases].find(
+      (key) => key && (hasOwn(application.fields, key) || hasOwn(existingFields, key))
+    ) ||
+    incomingPickedKey ||
+    existingKey ||
+    config.aliases[0];
+
+  if (!targetKey) return merged;
+  if (existingKey && hasOwn(existingFields, existingKey)) {
+    application.fields[targetKey] = existingFields[existingKey];
+  } else {
+    delete application.fields[targetKey];
+  }
+  if (config.picked) application.picked[config.picked] = targetKey;
+
+  return {
+    ...merged,
+    application
+  };
+}
+
+function preserveManualProfileOverrides(existing, merged) {
+  const overrideFields = normalizeProfileOverrideFields(existing.profileOverrides);
+  if (!overrideFields.length) return merged;
+
+  let next = {
+    ...merged,
+    profileOverrides: existing.profileOverrides || merged.profileOverrides
+  };
+
+  for (const field of overrideFields) {
+    const config = PROFILE_OVERRIDE_FIELD_CONFIG[field];
+    if (!config) continue;
+    if (config.topLevel && hasOwn(existing, config.topLevel)) {
+      next[config.topLevel] = existing[config.topLevel];
+    }
+    next = preserveApplicationOverride(existing, next, field);
+  }
+
+  if (overrideFields.includes('email') || overrideFields.includes('phone')) {
+    next.identityKey = candidateIdentityKey(next) || existing.identityKey || next.identityKey;
+  }
+
+  return next;
+}
+
+export function mergeCandidateForUpsert(existing, nextCandidate) {
+  const merged = {
+    ...existing,
+    ...nextCandidate,
+    id: existing.id,
+    createdAt: existing.createdAt || nextCandidate.createdAt,
+    screening: nextCandidate.screening ?? existing.screening ?? null,
+    manualReview: nextCandidate.manualReview ?? existing.manualReview ?? null,
+    interview: nextCandidate.interview ?? existing.interview ?? null,
+    interviewRecords: nextCandidate.interviewRecords ?? existing.interviewRecords,
+    timeline: mergeTimeline(existing.timeline, nextCandidate.timeline),
+    identityKey: nextCandidate.identityKey || existing.identityKey || candidateIdentityKey(existing)
+  };
+  return preserveManualProfileOverrides(existing, merged);
+}
+
 export async function listCandidates() {
   const db = await readDb();
   return db.candidates.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -136,18 +291,7 @@ export async function upsertCandidate(candidate) {
     };
     if (targetIndex >= 0) {
       const existing = db.candidates[targetIndex];
-      db.candidates[targetIndex] = {
-        ...existing,
-        ...nextCandidate,
-        id: existing.id,
-        createdAt: existing.createdAt || nextCandidate.createdAt,
-        screening: nextCandidate.screening ?? existing.screening ?? null,
-        manualReview: nextCandidate.manualReview ?? existing.manualReview ?? null,
-        interview: nextCandidate.interview ?? existing.interview ?? null,
-        interviewRecords: nextCandidate.interviewRecords ?? existing.interviewRecords,
-        timeline: mergeTimeline(existing.timeline, nextCandidate.timeline),
-        identityKey: identityKey || existing.identityKey || candidateIdentityKey(existing)
-      };
+      db.candidates[targetIndex] = mergeCandidateForUpsert(existing, nextCandidate);
       return db.candidates[targetIndex];
     }
     db.candidates.push(nextCandidate);

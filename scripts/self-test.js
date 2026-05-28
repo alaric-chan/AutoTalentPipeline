@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { extractResumeProfile } from '../server/resumeParser.js';
+import { mergeCandidateForUpsert } from '../server/store.js';
 
 const port = process.env.PORT || 4317;
 const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
@@ -70,6 +71,96 @@ function assertResumeProfileParsing() {
   }
 }
 
+function assertManualProfileOverrideMerge() {
+  const existing = {
+    id: 'lark_rec_manual_override_test',
+    name: '人工姓名',
+    email: 'manual@example.com',
+    phone: '13900000000',
+    school: '人工学校 · 人工专业',
+    degree: '硕士',
+    receivedAt: '2026-05-26T00:31:00.000Z',
+    source: 'lark-base',
+    identityKey: 'email:manual@example.com',
+    lark: { recordId: 'rec_manual_override_test' },
+    profileOverrides: {
+      fields: ['name', 'email', 'phone', 'schoolBackground', 'arrival'],
+      updatedAt: '2026-05-28T00:00:00.000Z',
+      updatedBy: 'self-test'
+    },
+    application: {
+      fields: {
+        姓名: '人工姓名',
+        联系邮箱: 'manual@example.com',
+        联系电话: '13900000000',
+        院校背景: '人工学校 · 人工专业',
+        学历: '硕士',
+        最快到岗时间: '2026-06-01',
+        可实习时长: '3个月'
+      },
+      picked: {
+        name: '姓名',
+        email: '联系邮箱',
+        phone: '联系电话',
+        school: '院校背景',
+        degree: '学历',
+        arrival: '最快到岗时间',
+        duration: '可实习时长'
+      }
+    },
+    timeline: []
+  };
+  const incoming = {
+    id: 'lark_rec_manual_override_test',
+    name: '飞书姓名',
+    email: 'lark@example.com',
+    phone: '123213',
+    school: '飞书学校',
+    degree: '本科',
+    receivedAt: '2026-05-27T00:31:00.000Z',
+    source: 'lark-base',
+    identityKey: 'email:lark@example.com',
+    lark: { recordId: 'rec_manual_override_test' },
+    application: {
+      fields: {
+        姓名: '飞书姓名',
+        联系邮箱: 'lark@example.com',
+        联系电话: '123213',
+        院校背景: '飞书学校',
+        学历: '本科',
+        最快到岗时间: '2026-07-01',
+        可实习时长: '6个月'
+      },
+      picked: {
+        name: '姓名',
+        email: '联系邮箱',
+        phone: '联系电话',
+        school: '院校背景',
+        degree: '学历',
+        arrival: '最快到岗时间',
+        duration: '可实习时长'
+      }
+    },
+    timeline: []
+  };
+  const merged = mergeCandidateForUpsert(existing, incoming);
+  if (merged.name !== '人工姓名' || merged.email !== 'manual@example.com' || merged.phone !== '13900000000') {
+    throw new Error('manual profile override merge failed to preserve corrected identity fields');
+  }
+  if (merged.school !== '人工学校 · 人工专业' || merged.application.fields.院校背景 !== '人工学校 · 人工专业') {
+    throw new Error('manual profile override merge failed to preserve corrected school background');
+  }
+  if (merged.application.fields.最快到岗时间 !== '2026-06-01') {
+    throw new Error('manual profile override merge failed to preserve corrected arrival date');
+  }
+  if (merged.degree !== '本科' || merged.application.fields.可实习时长 !== '6个月') {
+    throw new Error('manual profile override merge blocked unedited Lark fields');
+  }
+  if (merged.identityKey !== 'email:manual@example.com') {
+    throw new Error(`manual profile override merge reset identity key: ${merged.identityKey}`);
+  }
+}
+
 async function waitForServer() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10_000) {
@@ -84,6 +175,7 @@ async function main() {
   let dbBackup = null;
   try {
     assertResumeProfileParsing();
+    assertManualProfileOverrideMerge();
     if (process.env.SELF_TEST_RESTORE !== 'false') {
       dbBackup = await fs.readFile(dbPath, 'utf8').catch(() => null);
     }
@@ -115,6 +207,11 @@ async function main() {
       }
       if (detail.email && patched.email !== detail.email) {
         throw new Error('candidate partial profile patch cleared an omitted email field');
+      }
+      const db = JSON.parse(await fs.readFile(dbPath, 'utf8'));
+      const storedCandidate = db.candidates?.find((candidate) => candidate.id === candidateId);
+      if (!storedCandidate?.profileOverrides?.fields?.includes('phone')) {
+        throw new Error('candidate profile edit did not mark the corrected phone field as manual');
       }
     }
     const candidatesResponse = await fetch(`${baseUrl}/api/candidates`, { headers: authHeaders });
