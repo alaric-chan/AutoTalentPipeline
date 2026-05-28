@@ -409,7 +409,7 @@ function advanceInterviewStatus(candidate, nextStatus, options = {}) {
 }
 
 function isFinalConfirmationStatus(status = '') {
-  return ['confirmed', 'reschedule_requested', 'declined'].includes(String(status || ''));
+  return ['confirmed', 'offline_confirmed', 'reschedule_requested', 'declined'].includes(String(status || ''));
 }
 
 function isOfficialInviteSent(interview = {}) {
@@ -456,6 +456,7 @@ function confirmationUrlForToken(token) {
 function confirmationStatusText(status = '') {
   const value = String(status || '');
   if (value === 'confirmed') return '已确认参加';
+  if (value === 'offline_confirmed') return '线下已确认';
   if (value === 'reschedule_requested') return '申请改期';
   if (value === 'declined') return '暂不参加';
   if (value === 'mail-draft-generated') return '确认邮件待发送';
@@ -1530,7 +1531,7 @@ app.post('/api/candidates/:id/interview/confirmation-mail', asyncRoute(async (re
     error.status = 400;
     throw error;
   }
-  if (['confirmed', 'declined'].includes(candidate.interview?.confirmation?.status)) {
+  if (['confirmed', 'offline_confirmed', 'declined'].includes(candidate.interview?.confirmation?.status)) {
     const error = new Error('候选人已反馈当前确认邮件，请进入下一步；如需改期，请先记录候选人改期反馈。');
     error.status = 409;
     throw error;
@@ -1651,6 +1652,65 @@ app.post('/api/candidates/:id/interview/confirmation-mail-sent', asyncRoute(asyn
     mode: 'manual-confirmation'
   });
   res.json(stripPrivateCandidate(updated, { detail: true }));
+}));
+
+app.post('/api/candidates/:id/interview/offline-confirmation', asyncRoute(async (req, res) => {
+  const candidate = requireCandidate(await getCandidate(req.params.id));
+  const payload = await interviewPayload(candidate, req.body);
+  const confirmation = candidate.interview?.confirmation || {};
+  const confirmedAt = new Date().toISOString();
+  const confirmedBy = req.body?.confirmedBy || config.recruiting.contactName;
+  const note = String(req.body?.note || '').trim() || confirmation.note || '已通过留言/电话确认改期时间';
+  const nextConfirmation = confirmation.token
+    ? {
+        ...confirmation,
+        status: 'offline_confirmed',
+        response: 'offline-confirm',
+        respondedAt: confirmedAt,
+        offlineConfirmedAt: confirmedAt,
+        offlineConfirmedBy: confirmedBy,
+        note,
+        interview: payload.interview
+      }
+    : {
+        status: 'offline_confirmed',
+        response: 'offline-confirm',
+        respondedAt: confirmedAt,
+        offlineConfirmedAt: confirmedAt,
+        offlineConfirmedBy: confirmedBy,
+        note,
+        interview: payload.interview
+      };
+  const updated = await patchCandidate(candidate.id, {
+    status: advanceInterviewStatus(candidate, '候选人已确认', {
+      allowFrom: ['待发送确认邮件', '确认邮件待发送', '等待候选人确认', '申请改期', '待重新安排']
+    }),
+    interview: {
+      ...(candidate.interview || {}),
+      ...payload.interview,
+      subject: payload.email.subject,
+      confirmation: nextConfirmation,
+      actions: [
+        ...((candidate.interview || {}).actions || []).filter((item) => item.type !== 'offline-time-confirmation'),
+        { type: 'offline-time-confirmation', status: 'confirmed-by-recruiter', at: confirmedAt }
+      ]
+    },
+    timeline: [
+      ...(candidate.timeline || []),
+      {
+        at: confirmedAt,
+        action: '线下确认面试时间',
+        detail: `${payload.interview.start} ${payload.interview.locationOrLink || ''}`.trim()
+      }
+    ]
+  });
+  await addVerificationRun({
+    type: 'candidate-offline-confirmation',
+    status: 'passed',
+    detail: `${updated.name || updated.email || updated.id}：线下确认面试时间`,
+    mode: 'manual-offline-confirmation'
+  });
+  res.json({ candidate: stripPrivateCandidate(updated, { detail: true }), payload });
 }));
 
 app.post('/api/candidates/:id/interview/schedule', asyncRoute(async (req, res) => {

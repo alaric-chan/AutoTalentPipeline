@@ -271,37 +271,36 @@ async function assertInterviewStatusFlow(candidateId) {
     throw new Error('candidate reschedule response was not persisted for admin review');
   }
 
-  const replacement = await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail`, {
+  const offlineConfirmed = await fetchJson(`/api/candidates/${candidateId}/interview/offline-confirmation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      start: '2026-06-08T14:30',
-      end: '2026-06-08T15:00',
+      start: '2026-06-08T16:30',
+      end: '2026-06-08T17:00',
       durationMinutes: 30,
-      locationOrLink: 'Teams 线上会议'
+      locationOrLink: 'Teams 线上会议',
+      note: '电话确认 16:30 可以面试'
     })
   });
-  const replacementToken = confirmationTokenFromUrl(replacement.confirmationUrl);
-  if (replacement.candidate?.status !== '确认邮件待发送') {
-    throw new Error(`reschedule replacement should return to confirmation draft stage: ${replacement.candidate?.status}`);
+  if (
+    offlineConfirmed.candidate?.status !== '候选人已确认' ||
+    offlineConfirmed.candidate?.interview?.confirmation?.status !== 'offline_confirmed' ||
+    offlineConfirmed.candidate?.interview?.start !== '2026-06-08T16:30'
+  ) {
+    throw new Error('offline reschedule confirmation did not unlock the formal calendar step');
   }
 
-  await fetchJson(`/api/candidates/${candidateId}/interview/confirmation-mail-sent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ note: 'self-test replacement sent' })
-  });
-  await fetchJson(`/api/interview-confirmations/${encodeURIComponent(replacementToken)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: 'confirm', note: '确认参加' })
-  });
+  const currentConfirmation = await fetchJson(`/api/interview-confirmations/${encodeURIComponent(currentToken)}`);
+  if (currentConfirmation.status !== 'offline_confirmed') {
+    throw new Error('offline confirmation should be visible on the candidate confirmation page');
+  }
+
   const calendar = await fetchJson(`/api/candidates/${candidateId}/interview/outlook-web-calendar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      start: '2026-06-08T14:30',
-      end: '2026-06-08T15:00',
+      start: '2026-06-08T16:30',
+      end: '2026-06-08T17:00',
       durationMinutes: 30,
       locationOrLink: 'Teams 线上会议'
     })
@@ -322,7 +321,7 @@ async function assertInterviewStatusFlow(candidateId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note: 'late click should not regress' })
   });
-  if (lateMailSent.status !== '已预约面试' || lateMailSent.interview?.confirmation?.status !== 'confirmed') {
+  if (lateMailSent.status !== '已预约面试' || lateMailSent.interview?.confirmation?.status !== 'offline_confirmed') {
     throw new Error('late confirmation-mail sent click regressed the scheduled candidate status');
   }
 }

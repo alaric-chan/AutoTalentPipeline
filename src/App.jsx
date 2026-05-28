@@ -1080,6 +1080,7 @@ function screeningListStatus(candidate) {
 function confirmationStatusLabel(status = '') {
   const value = String(status || '');
   if (value === 'confirmed') return '候选人已确认';
+  if (value === 'offline_confirmed') return '线下已确认';
   if (value === 'reschedule_requested') return '申请改期';
   if (value === 'declined') return '暂不参加';
   if (value === 'mail-draft-generated') return '确认邮件待发送';
@@ -1115,12 +1116,18 @@ function formalCalendarReady(candidate) {
   const confirmationStatus = candidate?.interview?.confirmation?.status;
   return (
     confirmationStatus === 'confirmed' ||
+    confirmationStatus === 'offline_confirmed' ||
     ['web-link-generated', 'web-sent-confirmed', 'graph-sent'].includes(candidate?.interview?.inviteStatus)
   );
 }
 
+function needsOfflineTimeConfirmation(candidate) {
+  const confirmationStatus = candidate?.interview?.confirmation?.status;
+  return confirmationStatus === 'reschedule_requested' || ['申请改期', '待重新安排'].includes(candidate?.status);
+}
+
 function statusTone(value) {
-  if (['已通过', '高匹配', '较匹配', '强推', '可面', '候选人已确认', '已预约面试', '已确认发送'].includes(value)) return 'positive';
+  if (['已通过', '高匹配', '较匹配', '强推', '可面', '候选人已确认', '线下已确认', '已预约面试', '已确认发送'].includes(value)) return 'positive';
   if (['不通过', '不匹配', '不建议', '候选人放弃', '暂不参加'].includes(value)) return 'negative';
   if (
     [
@@ -1370,7 +1377,7 @@ function InterviewConfirmationPage({ token }) {
     }
   }
 
-  const isDone = ['confirmed', 'reschedule_requested', 'declined'].includes(data?.status);
+  const isDone = ['confirmed', 'offline_confirmed', 'reschedule_requested', 'declined'].includes(data?.status);
   const isHistoricalLink = data && data.isCurrent === false;
 
   return (
@@ -1423,6 +1430,8 @@ function InterviewConfirmationPage({ token }) {
                   <span>
                     {data.status === 'confirmed'
                       ? '感谢确认，请留意后续正式日程邮件。'
+                      : data.status === 'offline_confirmed'
+                        ? '我们已记录线下确认的新时间，请留意正式日程邮件。'
                       : data.status === 'reschedule_requested'
                         ? '我们已收到改期申请，会尽快重新协调时间。'
                         : '已收到反馈，感谢你的告知。'}
@@ -2172,7 +2181,24 @@ function App() {
 
   async function openOutlookCalendarInvite() {
     if (!selected) return;
+    const shouldRecordOfflineConfirmation = needsOfflineTimeConfirmation(selected);
     const calendarWindow = openPendingWindow('正在打开 Outlook 日程邀请');
+    if (shouldRecordOfflineConfirmation) {
+      const offlineResult = await runAction('线下确认面试时间', () =>
+        api(`/api/candidates/${selected.id}/interview/offline-confirmation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...interview,
+            note: '已通过留言/电话确认改期时间'
+          })
+        })
+      );
+      if (!offlineResult?.candidate) {
+        calendarWindow?.close();
+        return;
+      }
+    }
     const result = await runAction('打开 Outlook 日程邀请', () =>
       api(`/api/candidates/${selected.id}/interview/outlook-web-calendar`, {
         method: 'POST',
@@ -2354,9 +2380,10 @@ function App() {
   const outlookConnected = Boolean(health?.outlook?.connected);
   const interviewHasStart = Boolean(interview.start);
   const officialInviteSent = ['web-sent-confirmed', 'graph-sent'].includes(selected?.interview?.inviteStatus);
-  const confirmationCompleted = ['confirmed', 'declined'].includes(selected?.interview?.confirmation?.status);
+  const confirmationCompleted = ['confirmed', 'offline_confirmed', 'declined'].includes(selected?.interview?.confirmation?.status);
   const confirmationMailSentVisible =
     selected?.interview?.confirmation?.status === 'mail-draft-generated' && !officialInviteSent;
+  const offlineTimeConfirmationNeeded = needsOfflineTimeConfirmation(selected);
   const confirmationMailDisabled =
     Boolean(busy) ||
     !interviewHasStart ||
@@ -2367,8 +2394,8 @@ function App() {
     Boolean(busy) ||
     !interviewHasStart ||
     !candidateHasEmail(selected) ||
-    !formalCalendarReady(selected) ||
-    officialInviteSent;
+    (!formalCalendarReady(selected) && !offlineTimeConfirmationNeeded) ||
+    (officialInviteSent && !offlineTimeConfirmationNeeded);
   const interviewScheduleDisabled =
     Boolean(busy) || !interviewHasStart || !outlookConnected || (interview.live && !formalCalendarReady(selected));
   const scheduleUndoVisible =
@@ -3031,15 +3058,17 @@ function App() {
                               ? '请先为当前候选人选择面试时间。'
                               : !candidateHasEmail(selected)
                               ? '候选人缺少邮箱。'
-                              : officialInviteSent
+                              : officialInviteSent && !offlineTimeConfirmationNeeded
                                 ? '正式日程已确认发送。'
+                              : offlineTimeConfirmationNeeded
+                                ? '已通过留言或电话确认新时间后，可直接打开正式 Outlook/Teams 日程。'
                               : !formalCalendarReady(selected)
                                 ? '候选人确认面试时间后，再发送正式 Outlook/Teams 日程。'
                                 : undefined
                           }
                         >
                           <CalendarPlus size={16} />
-                          Outlook日程邀请
+                          {offlineTimeConfirmationNeeded ? '线下确认后发日程' : 'Outlook日程邀请'}
                         </button>
                         {selected.interview?.inviteStatus === 'web-link-generated' ? (
                           <button className="ghost-button" onClick={confirmOutlookCalendarSent} disabled={Boolean(busy)}>
