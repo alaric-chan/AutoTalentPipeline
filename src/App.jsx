@@ -2074,7 +2074,7 @@ function App() {
   }
 
   return (
-    <main className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`}>
+    <main className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`} data-ui-version="match-rubric-20260528">
       <aside className="side-nav">
         <div className="brand-block">
           <strong>乐享AI招聘</strong>

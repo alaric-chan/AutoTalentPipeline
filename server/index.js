@@ -83,9 +83,16 @@ const hasBuiltFrontend = await fs
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+  if (req.url === '/recruiting/api' || req.url.startsWith('/recruiting/api/')) {
+    req.url = req.url.replace(/^\/recruiting\/api/, '/api');
+  }
+  next();
+});
 
 if (hasBuiltFrontend) {
   app.use(express.static(paths.dist));
+  app.use('/recruiting', express.static(paths.dist));
 }
 
 function getRequestToken(req) {
