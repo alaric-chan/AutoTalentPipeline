@@ -3175,7 +3175,7 @@ function App() {
                       </section>
                       <section className="panel evidence-panel">
                         <div className="panel-heading">
-                          <h3>岗位匹配分析</h3>
+                          <h3>AI岗位匹配分析</h3>
                           <div className="panel-heading-actions">
                             <button
                               className="ghost-button compact-button screening-ai-button"
