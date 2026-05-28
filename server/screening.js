@@ -583,6 +583,8 @@ ${safeResumeText.slice(0, 14000)}`;
       body: JSON.stringify({
         model: config.bailian.model,
         temperature: 0.35,
+        enable_thinking: false,
+        max_tokens: 1800,
         messages: [
           {
             role: 'system',
@@ -697,6 +699,8 @@ ${safeResumeText.slice(0, 18000)}`;
       body: JSON.stringify({
         model: config.bailian.model,
         temperature: 0.1,
+        enable_thinking: false,
+        max_tokens: 1800,
         messages: [
           {
             role: 'system',
