@@ -2943,7 +2943,7 @@ function App() {
       <main className="login-shell">
         <form className="login-panel" onSubmit={login}>
           <KeyRound size={28} />
-          <h1>乐享AI招聘工作台</h1>
+          <h1>招聘项目工作台</h1>
           <p>使用工作台账号登录。管理员初始账号为 chenbk1。</p>
           <label>
             账号
