@@ -1431,6 +1431,13 @@ pre {
   box-shadow: inset 0 0 0 5px #d7eee9;
 }
 
+.candidate-step-done.active .candidate-step-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #d7eee9;
+  color: #fff;
+}
+
 .candidate-step-stopped {
   background: #fff0ed;
   border-color: #ffc7bc;
