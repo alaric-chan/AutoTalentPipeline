@@ -371,6 +371,46 @@ async function assertInterviewStatusFlow(candidateId) {
   }
 }
 
+async function assertProjectApiFlow() {
+  const beforeProjects = await fetchJson('/api/requisitions');
+  const defaultProjectId = beforeProjects.current?.id;
+  if (!defaultProjectId) throw new Error('project API did not return a current requisition');
+  const defaultCandidates = await fetchJson('/api/candidates');
+  const libraryBefore = await fetchJson('/api/candidate-library');
+  if (libraryBefore.length < defaultCandidates.length) {
+    throw new Error('candidate library should include every current project candidate');
+  }
+
+  const created = await fetchJson('/api/requisitions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: '自测招聘项目',
+      teamName: '通用团队',
+      owner: 'self-test',
+      positionType: '产品',
+      sourceConfigSummary: '新设置的来源'
+    })
+  });
+  if (!created.requisition?.id || created.current?.id !== created.requisition.id) {
+    throw new Error('new requisition should become current by default');
+  }
+  const emptyProjectCandidates = await fetchJson('/api/candidates');
+  if (emptyProjectCandidates.length !== 0) {
+    throw new Error('new requisition should start with an empty project candidate pool');
+  }
+  const libraryAfterProjectSwitch = await fetchJson('/api/candidate-library');
+  if (libraryAfterProjectSwitch.length !== libraryBefore.length) {
+    throw new Error('candidate library should not be filtered by current requisition');
+  }
+
+  await fetchJson(`/api/requisitions/${encodeURIComponent(defaultProjectId)}/current`, { method: 'POST' });
+  const restoredCandidates = await fetchJson('/api/candidates');
+  if (restoredCandidates.length !== defaultCandidates.length) {
+    throw new Error('switching back to default requisition did not restore the project candidate pool');
+  }
+}
+
 async function waitForServer() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10_000) {
@@ -396,6 +436,7 @@ async function main() {
       await waitForServer();
     }
     await ensureAuthHeaders();
+    await assertProjectApiFlow();
     const response = await fetch(`${baseUrl}/api/self-test`, { method: 'POST', headers: authHeaders });
     const data = await response.json();
     if (!response.ok) {

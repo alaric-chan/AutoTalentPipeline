@@ -1,9 +1,41 @@
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { paths } from './config.js';
 
+const SCHEMA_VERSION = 2;
+const DEFAULT_WORKSPACE_ID = 'workspace_lexiang_ai';
+const DEFAULT_REQUISITION_ID = 'req_lexiang_ai_pm_intern';
+
 const initialState = {
+  schemaVersion: SCHEMA_VERSION,
+  currentRequisitionId: DEFAULT_REQUISITION_ID,
+  workspaces: [
+    {
+      id: DEFAULT_WORKSPACE_ID,
+      name: '乐享AI',
+      owner: '陈百科',
+      createdAt: '2026-05-29T00:00:00.000Z',
+      updatedAt: '2026-05-29T00:00:00.000Z'
+    }
+  ],
+  requisitions: [
+    {
+      id: DEFAULT_REQUISITION_ID,
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      name: 'AI 产品经理实习生',
+      teamName: '乐享AI',
+      owner: '陈百科',
+      positionType: '产品',
+      sourceConfigSummary: '飞书表单 + Outlook + 手工上传',
+      jdSummary: '保留现有乐享AI实习生招聘链路，作为默认招聘项目。',
+      status: 'active',
+      createdAt: '2026-05-29T00:00:00.000Z',
+      updatedAt: '2026-05-29T00:00:00.000Z'
+    }
+  ],
   candidates: [],
+  applications: [],
   settings: {
     interviewTemplate: null
   },
@@ -28,26 +60,222 @@ async function ensureDataFiles() {
   }
 }
 
-export async function readDb() {
-  await ensureDataFiles();
-  const raw = await fs.readFile(paths.db, 'utf8');
-  const parsed = JSON.parse(raw);
+function defaultWorkspace() {
+  return { ...initialState.workspaces[0] };
+}
+
+function defaultRequisition() {
+  return { ...initialState.requisitions[0] };
+}
+
+function ensureProjectCollections(db) {
+  db.schemaVersion = SCHEMA_VERSION;
+  db.workspaces = Array.isArray(db.workspaces) ? db.workspaces : [];
+  db.requisitions = Array.isArray(db.requisitions) ? db.requisitions : [];
+  db.applications = Array.isArray(db.applications) ? db.applications : [];
+  if (!db.workspaces.some((workspace) => workspace.id === DEFAULT_WORKSPACE_ID)) {
+    db.workspaces.unshift(defaultWorkspace());
+  }
+  if (!db.requisitions.some((requisition) => requisition.id === DEFAULT_REQUISITION_ID)) {
+    db.requisitions.unshift(defaultRequisition());
+  }
+  db.currentRequisitionId =
+    db.requisitions.some((requisition) => requisition.id === db.currentRequisitionId)
+      ? db.currentRequisitionId
+      : DEFAULT_REQUISITION_ID;
+}
+
+function safeBackupStamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+async function backupLegacyDb(raw) {
+  const parsedPath = path.parse(paths.db);
+  const backupPath = path.join(parsedPath.dir, `${parsedPath.name}.pre-v2-${safeBackupStamp()}${parsedPath.ext}`);
+  await fs.writeFile(backupPath, raw, 'utf8');
+  return backupPath;
+}
+
+function applicationIdFor(candidateId, requisitionId = DEFAULT_REQUISITION_ID) {
+  const source = `${requisitionId}:${candidateId}`;
+  return `app_${crypto.createHash('sha1').update(source).digest('hex').slice(0, 12)}`;
+}
+
+const PROFILE_KEYS = new Set([
+  'id',
+  'candidateId',
+  'identityKey',
+  'name',
+  'email',
+  'phone',
+  'school',
+  'degree',
+  'major',
+  'resumeFile',
+  'resumeText',
+  'lark',
+  'messageId',
+  'messageSubject',
+  'profileOverrides',
+  'createdAt',
+  'updatedAt'
+]);
+
+function splitCandidateProfile(candidate = {}) {
+  const identityKey = candidate.identityKey || candidateIdentityKey(candidate);
   return {
+    id: candidate.id,
+    identityKey,
+    name: candidate.name || '',
+    email: candidate.email || '',
+    phone: candidate.phone || '',
+    school: candidate.school || '',
+    degree: candidate.degree || '',
+    major: candidate.major || '',
+    resumeFile: candidate.resumeFile || null,
+    resumeText: candidate.resumeText || '',
+    lark: candidate.lark || null,
+    messageId: candidate.messageId || '',
+    messageSubject: candidate.messageSubject || '',
+    profileOverrides: candidate.profileOverrides || null,
+    createdAt: candidate.createdAt,
+    updatedAt: candidate.updatedAt
+  };
+}
+
+function splitApplicationSnapshot(candidate = {}, requisitionId = DEFAULT_REQUISITION_ID, existing = null) {
+  const snapshot = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    if (!PROFILE_KEYS.has(key) && key !== 'applicationId' && key !== 'requisitionId') {
+      snapshot[key] = value;
+    }
+  }
+  return {
+    ...(existing || {}),
+    ...snapshot,
+    id: existing?.id || candidate.applicationId || applicationIdFor(candidate.id, requisitionId),
+    candidateId: candidate.id,
+    requisitionId,
+    createdAt: existing?.createdAt || candidate.createdAt || new Date().toISOString(),
+    updatedAt: candidate.updatedAt || new Date().toISOString()
+  };
+}
+
+function joinCandidate(profile, application = null, requisition = null) {
+  if (!profile) return null;
+  const joined = {
+    ...(profile || {}),
+    ...(application || {}),
+    id: profile.id,
+    candidateId: profile.id,
+    applicationId: application?.id || '',
+    requisitionId: application?.requisitionId || requisition?.id || '',
+    requisition: requisition
+      ? {
+          id: requisition.id,
+          name: requisition.name,
+          workspaceId: requisition.workspaceId,
+          teamName: requisition.teamName,
+          owner: requisition.owner,
+          status: requisition.status
+        }
+      : null,
+    identityKey: profile.identityKey || application?.identityKey || candidateIdentityKey({ ...profile, ...(application || {}) })
+  };
+  return joined;
+}
+
+function joinedCandidatesForDb(db, requisitionId = db.currentRequisitionId) {
+  const requisition = db.requisitions.find((item) => item.id === requisitionId) || db.requisitions[0] || null;
+  const applications = db.applications.filter((application) => application.requisitionId === requisitionId);
+  return applications
+    .map((application) => {
+      const profile = db.candidates.find((candidate) => candidate.id === application.candidateId);
+      return joinCandidate(profile, application, requisition);
+    })
+    .filter(Boolean);
+}
+
+function normalizeDbShape(parsed) {
+  const db = {
     ...initialState,
     ...parsed,
     settings: { ...initialState.settings, ...(parsed.settings || {}) },
     outlook: { ...initialState.outlook, ...(parsed.outlook || {}) },
     candidates: parsed.candidates || [],
+    applications: parsed.applications || [],
     verificationRuns: parsed.verificationRuns || [],
     users: parsed.users || [],
     sessions: parsed.sessions || []
   };
+  ensureProjectCollections(db);
+  return db;
+}
+
+function migrateLegacyDb(parsed) {
+  const db = normalizeDbShape({
+    ...parsed,
+    schemaVersion: SCHEMA_VERSION,
+    workspaces: parsed.workspaces?.length ? parsed.workspaces : [defaultWorkspace()],
+    requisitions: parsed.requisitions?.length ? parsed.requisitions : [defaultRequisition()],
+    currentRequisitionId: parsed.currentRequisitionId || DEFAULT_REQUISITION_ID,
+    applications: Array.isArray(parsed.applications) ? parsed.applications : []
+  });
+
+  const existingApplicationKeys = new Set(
+    db.applications.map((application) => `${application.requisitionId}:${application.candidateId}`)
+  );
+  const profiles = [];
+  const seenProfiles = new Set();
+  for (const candidate of parsed.candidates || []) {
+    if (!candidate?.id || seenProfiles.has(candidate.id)) continue;
+    const profile = splitCandidateProfile(candidate);
+    profiles.push(profile);
+    seenProfiles.add(candidate.id);
+
+    const key = `${DEFAULT_REQUISITION_ID}:${candidate.id}`;
+    if (!existingApplicationKeys.has(key)) {
+      db.applications.push(splitApplicationSnapshot(candidate, DEFAULT_REQUISITION_ID));
+      existingApplicationKeys.add(key);
+    }
+  }
+  db.candidates = profiles;
+  ensureProjectCollections(db);
+  return db;
+}
+
+export async function readDb() {
+  await ensureDataFiles();
+  const raw = await fs.readFile(paths.db, 'utf8');
+  const parsed = JSON.parse(raw);
+  const needsMigration =
+    parsed.schemaVersion !== SCHEMA_VERSION ||
+    !Array.isArray(parsed.workspaces) ||
+    !Array.isArray(parsed.requisitions) ||
+    !Array.isArray(parsed.applications);
+  if (!needsMigration) return normalizeDbShape(parsed);
+
+  const migrated = migrateLegacyDb(parsed);
+  const backupPath = await backupLegacyDb(raw);
+  migrated.migrations = [
+    ...(parsed.migrations || []),
+    {
+      version: SCHEMA_VERSION,
+      migratedAt: new Date().toISOString(),
+      backupPath,
+      defaultRequisitionId: DEFAULT_REQUISITION_ID,
+      legacyCandidateCount: (parsed.candidates || []).length
+    }
+  ];
+  await fs.writeFile(paths.db, JSON.stringify(migrated, null, 2), 'utf8');
+  return migrated;
 }
 
 export async function writeDb(next) {
   await ensureDataFiles();
-  await fs.writeFile(paths.db, JSON.stringify(next, null, 2), 'utf8');
-  return next;
+  const shaped = normalizeDbShape(next);
+  await fs.writeFile(paths.db, JSON.stringify(shaped, null, 2), 'utf8');
+  return shaped;
 }
 
 export async function updateDb(mutator) {
@@ -265,48 +493,205 @@ export function mergeCandidateForUpsert(existing, nextCandidate) {
 
 export async function listCandidates() {
   const db = await readDb();
-  return db.candidates.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  return joinedCandidatesForDb(db).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+export async function listCandidateLibrary() {
+  const db = await readDb();
+  const firstApplications = new Map();
+  for (const application of db.applications) {
+    if (!firstApplications.has(application.candidateId)) firstApplications.set(application.candidateId, application);
+  }
+  return db.candidates
+    .map((candidate) => {
+      const application = firstApplications.get(candidate.id);
+      const requisition = db.requisitions.find((item) => item.id === application?.requisitionId) || null;
+      return joinCandidate(candidate, application, requisition);
+    })
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
 export async function getCandidate(id) {
   const db = await readDb();
-  return db.candidates.find((candidate) => candidate.id === id);
+  const application =
+    db.applications.find((item) => item.requisitionId === db.currentRequisitionId && item.candidateId === id) ||
+    db.applications.find((item) => item.id === id) ||
+    db.applications.find((item) => item.candidateId === id);
+  const candidateId = application?.candidateId || id;
+  const profile = db.candidates.find((candidate) => candidate.id === candidateId);
+  const requisition = db.requisitions.find((item) => item.id === application?.requisitionId) || null;
+  return joinCandidate(profile, application, requisition);
 }
 
 export async function upsertCandidate(candidate) {
   const now = new Date().toISOString();
   return updateDb((db) => {
+    ensureProjectCollections(db);
+    const requisitionId = candidate.requisitionId || db.currentRequisitionId || DEFAULT_REQUISITION_ID;
     const identityKey = candidate.identityKey || candidateIdentityKey(candidate);
     const existingIndex = db.candidates.findIndex((item) => item.id === candidate.id);
     const identityIndex =
       existingIndex >= 0 || !identityKey
         ? -1
-        : db.candidates.findIndex((item) => (item.identityKey || candidateIdentityKey(item)) === identityKey);
+        : db.candidates.findIndex((item) => {
+            const application = db.applications.find((candidateApplication) => candidateApplication.candidateId === item.id);
+            return (item.identityKey || candidateIdentityKey(joinCandidate(item, application))) === identityKey;
+          });
     const targetIndex = existingIndex >= 0 ? existingIndex : identityIndex;
+    const candidateId = targetIndex >= 0 ? db.candidates[targetIndex].id : candidate.id;
+    const existingApplication = db.applications.find(
+      (application) => application.candidateId === candidateId && application.requisitionId === requisitionId
+    );
+    const existingJoined =
+      targetIndex >= 0
+        ? joinCandidate(db.candidates[targetIndex], existingApplication, db.requisitions.find((item) => item.id === requisitionId))
+        : {};
     const nextCandidate = {
+      ...existingJoined,
       ...candidate,
+      id: candidateId,
       identityKey,
       updatedAt: now,
-      createdAt: candidate.createdAt || now
+      createdAt: candidate.createdAt || existingJoined.createdAt || now
     };
     if (targetIndex >= 0) {
-      const existing = db.candidates[targetIndex];
-      db.candidates[targetIndex] = mergeCandidateForUpsert(existing, nextCandidate);
-      return db.candidates[targetIndex];
+      const merged = mergeCandidateForUpsert(existingJoined, nextCandidate);
+      db.candidates[targetIndex] = {
+        ...db.candidates[targetIndex],
+        ...splitCandidateProfile(merged),
+        id: candidateId,
+        updatedAt: now
+      };
+      const nextApplication = splitApplicationSnapshot(merged, requisitionId, existingApplication);
+      if (existingApplication) {
+        Object.assign(existingApplication, nextApplication);
+      } else {
+        db.applications.push(nextApplication);
+      }
+      return joinCandidate(
+        db.candidates[targetIndex],
+        existingApplication || nextApplication,
+        db.requisitions.find((item) => item.id === requisitionId)
+      );
     }
-    db.candidates.push(nextCandidate);
-    return nextCandidate;
+    const profile = splitCandidateProfile(nextCandidate);
+    const application = splitApplicationSnapshot(nextCandidate, requisitionId);
+    db.candidates.push(profile);
+    db.applications.push(application);
+    return joinCandidate(profile, application, db.requisitions.find((item) => item.id === requisitionId));
   });
 }
 
 export async function patchCandidate(id, patch) {
   return updateDb((db) => {
-    const existing = db.candidates.find((candidate) => candidate.id === id);
-    if (!existing) {
+    ensureProjectCollections(db);
+    const existingApplication =
+      db.applications.find((application) => application.requisitionId === db.currentRequisitionId && application.candidateId === id) ||
+      db.applications.find((application) => application.id === id) ||
+      db.applications.find((application) => application.candidateId === id);
+    const profileIndex = db.candidates.findIndex((candidate) => candidate.id === (existingApplication?.candidateId || id));
+    if (profileIndex < 0) {
       return null;
     }
-    Object.assign(existing, patch, { updatedAt: new Date().toISOString() });
-    return existing;
+    const requisitionId = patch.requisitionId || existingApplication?.requisitionId || db.currentRequisitionId || DEFAULT_REQUISITION_ID;
+    const existingJoined = joinCandidate(
+      db.candidates[profileIndex],
+      existingApplication,
+      db.requisitions.find((item) => item.id === requisitionId)
+    );
+    const next = {
+      ...existingJoined,
+      ...patch,
+      id: db.candidates[profileIndex].id,
+      updatedAt: new Date().toISOString()
+    };
+    db.candidates[profileIndex] = {
+      ...db.candidates[profileIndex],
+      ...splitCandidateProfile(next),
+      id: db.candidates[profileIndex].id
+    };
+    const nextApplication = splitApplicationSnapshot(next, requisitionId, existingApplication);
+    if (existingApplication) {
+      Object.assign(existingApplication, nextApplication);
+    } else {
+      db.applications.push(nextApplication);
+    }
+    return joinCandidate(
+      db.candidates[profileIndex],
+      existingApplication || nextApplication,
+      db.requisitions.find((item) => item.id === requisitionId)
+    );
+  });
+}
+
+export async function listRequisitions() {
+  const db = await readDb();
+  const counts = db.applications.reduce((acc, application) => {
+    acc[application.requisitionId] = (acc[application.requisitionId] || 0) + 1;
+    return acc;
+  }, {});
+  return db.requisitions.map((requisition) => ({
+    ...requisition,
+    candidateCount: counts[requisition.id] || 0,
+    isCurrent: requisition.id === db.currentRequisitionId
+  }));
+}
+
+export async function getCurrentRequisition() {
+  const db = await readDb();
+  return db.requisitions.find((requisition) => requisition.id === db.currentRequisitionId) || db.requisitions[0] || null;
+}
+
+export async function upsertRequisition(requisition = {}) {
+  const now = new Date().toISOString();
+  return updateDb((db) => {
+    ensureProjectCollections(db);
+    const id = requisition.id || newId('req');
+    const workspaceId = requisition.workspaceId || DEFAULT_WORKSPACE_ID;
+    if (!db.workspaces.some((workspace) => workspace.id === workspaceId)) {
+      db.workspaces.push({
+        id: workspaceId,
+        name: requisition.teamName || requisition.workspaceName || '新团队',
+        owner: requisition.owner || '',
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+    const index = db.requisitions.findIndex((item) => item.id === id);
+    const next = {
+      id,
+      workspaceId,
+      name: String(requisition.name || '新设置的招聘项目').trim() || '新设置的招聘项目',
+      teamName: String(requisition.teamName || requisition.workspaceName || '').trim(),
+      owner: String(requisition.owner || '').trim(),
+      positionType: String(requisition.positionType || '').trim(),
+      sourceConfigSummary: String(requisition.sourceConfigSummary || '').trim(),
+      jdSummary: String(requisition.jdSummary || '').trim(),
+      status: requisition.status || 'active',
+      createdAt: requisition.createdAt || now,
+      updatedAt: now
+    };
+    if (index >= 0) {
+      db.requisitions[index] = {
+        ...db.requisitions[index],
+        ...next,
+        id: db.requisitions[index].id,
+        createdAt: db.requisitions[index].createdAt || next.createdAt
+      };
+      return db.requisitions[index];
+    }
+    db.requisitions.push(next);
+    return next;
+  });
+}
+
+export async function setCurrentRequisition(id) {
+  return updateDb((db) => {
+    ensureProjectCollections(db);
+    const requisition = db.requisitions.find((item) => item.id === id);
+    if (!requisition) return null;
+    db.currentRequisitionId = requisition.id;
+    return requisition;
   });
 }
 

@@ -11,11 +11,14 @@ import {
   deleteSessionByTokenHash,
   deleteUser,
   getCandidate,
+  getCurrentRequisition,
   getSettings,
   getSessionByTokenHash,
   getUser,
   getUserByUsername,
+  listCandidateLibrary,
   listCandidates,
+  listRequisitions,
   listUsers,
   listVerificationRuns,
   newId,
@@ -24,8 +27,10 @@ import {
   patchSettings,
   patchUser,
   PROFILE_OVERRIDE_ORDER,
+  setCurrentRequisition,
   upsertUser,
-  upsertCandidate
+  upsertCandidate,
+  upsertRequisition
 } from './store.js';
 import { extractResumeProfile, extractResumeText, parseEmailAddress, parsePhoneNumber } from './resumeParser.js';
 import {
@@ -268,7 +273,7 @@ async function findExistingCandidate(candidate) {
   if (existingById) return existingById;
   const identityKey = candidateIdentityKey(candidate);
   if (!identityKey) return null;
-  const candidates = await listCandidates();
+  const candidates = await listCandidateLibrary();
   return candidates.find((item) => (item.identityKey || candidateIdentityKey(item)) === identityKey) || null;
 }
 
@@ -294,7 +299,8 @@ async function syncLarkBaseCandidates(options = {}, { trigger = 'manual', mode =
   };
 
   try {
-    const existingCandidates = await listCandidates();
+    const requisitionId = options.requisitionId || '';
+    const existingCandidates = await listCandidateLibrary();
     const existingByRecordId = new Map(
       existingCandidates
         .filter((candidate) => candidate.lark?.recordId)
@@ -315,6 +321,7 @@ async function syncLarkBaseCandidates(options = {}, { trigger = 'manual', mode =
       const isNewCandidate = !existing;
       let saved = await upsertCandidate({
         ...candidate,
+        requisitionId,
         status: existing?.status || candidate.status,
         receivedAt: candidate.receivedAt || existing?.receivedAt || candidate.createdAt || '',
         isNew: existing ? Boolean(existing.isNew) : true,
@@ -797,6 +804,10 @@ function stripPrivateCandidate(candidate, { detail = false } = {}) {
 
   return {
     id: safe.id,
+    candidateId: safe.candidateId,
+    applicationId: safe.applicationId,
+    requisitionId: safe.requisitionId,
+    requisition: safe.requisition,
     name: safe.name,
     emailMasked: maskEmail(safe.email),
     phoneMasked: maskPhone(safe.phone),
@@ -1117,8 +1128,49 @@ app.get('/api/health', asyncRoute(async (req, res) => {
     now: new Date().toISOString(),
     config: publicConfigStatus(),
     outlook: await getOutlookStatus(),
-    larkSync: getLarkSyncState()
+    larkSync: getLarkSyncState(),
+    requisition: await getCurrentRequisition()
   });
+}));
+
+app.get('/api/requisitions', asyncRoute(async (req, res) => {
+  res.json({
+    current: await getCurrentRequisition(),
+    requisitions: await listRequisitions()
+  });
+}));
+
+app.post('/api/requisitions', asyncRoute(async (req, res) => {
+  const requisition = await upsertRequisition(req.body || {});
+  if (req.body?.makeCurrent !== false) await setCurrentRequisition(requisition.id);
+  await addVerificationRun({
+    type: 'requisition-create',
+    status: 'passed',
+    detail: `创建招聘项目 ${requisition.teamName ? `${requisition.teamName} / ` : ''}${requisition.name}`,
+    mode: req.currentUser?.username || req.authMode || 'manual'
+  });
+  res.json({ current: await getCurrentRequisition(), requisition });
+}));
+
+app.patch('/api/requisitions/:id', asyncRoute(async (req, res) => {
+  const requisition = await upsertRequisition({ ...(req.body || {}), id: req.params.id });
+  await addVerificationRun({
+    type: 'requisition-update',
+    status: 'passed',
+    detail: `更新招聘项目 ${requisition.teamName ? `${requisition.teamName} / ` : ''}${requisition.name}`,
+    mode: req.currentUser?.username || req.authMode || 'manual'
+  });
+  res.json({ current: await getCurrentRequisition(), requisition });
+}));
+
+app.post('/api/requisitions/:id/current', asyncRoute(async (req, res) => {
+  const requisition = await setCurrentRequisition(req.params.id);
+  if (!requisition) {
+    const error = new Error('招聘项目不存在。');
+    error.status = 404;
+    throw error;
+  }
+  res.json({ current: requisition, requisitions: await listRequisitions() });
 }));
 
 app.get('/api/outlook/status', asyncRoute(async (req, res) => {
@@ -1205,6 +1257,7 @@ app.post('/api/outlook/sync', asyncRoute(async (req, res) => {
   const result = await syncOutlookResumes({
     query: req.body.query,
     limit: req.body.limit,
+    requisitionId: req.body.requisitionId,
     mock: Boolean(req.body.mock)
   });
   await addVerificationRun({
@@ -1283,6 +1336,11 @@ app.post('/api/interview-sheet/sync', asyncRoute(async (req, res) => {
 
 app.get('/api/candidates', asyncRoute(async (req, res) => {
   const candidates = await listCandidates();
+  res.json(candidates.map((candidate) => stripPrivateCandidate(candidate)));
+}));
+
+app.get('/api/candidate-library', asyncRoute(async (req, res) => {
+  const candidates = await listCandidateLibrary();
   res.json(candidates.map((candidate) => stripPrivateCandidate(candidate)));
 }));
 
@@ -1365,6 +1423,7 @@ app.post('/api/candidates/upload', upload.single('resume'), asyncRoute(async (re
   const phone = parsePhoneNumber(req.body.phone) || parsedProfile.phone;
   let candidate = await upsertCandidate({
     id: newId('cand'),
+    requisitionId: req.body.requisitionId,
     name,
     email,
     phone,

@@ -347,7 +347,7 @@ function isResumeAttachment(attachment) {
   return /\.(pdf|doc|docx|txt|md)$/i.test(name);
 }
 
-async function importCandidateFromResume({ message, attachment, buffer, resumeText }) {
+async function importCandidateFromResume({ message, attachment, buffer, resumeText, requisitionId = '' }) {
   const ext = path.extname(attachment.name || '.txt') || '.txt';
   const id = newId('cand');
   const safeName = `${id}${ext}`;
@@ -363,6 +363,7 @@ async function importCandidateFromResume({ message, attachment, buffer, resumeTe
   const email = sender.address || parseEmailAddress(message.bodyPreview) || '';
   const candidate = await upsertCandidate({
     id,
+    requisitionId,
     name: inferredName,
     email,
     source: 'outlook',
@@ -389,10 +390,11 @@ async function importCandidateFromResume({ message, attachment, buffer, resumeTe
   return candidate;
 }
 
-export async function syncOutlookResumes({ query = '超级智能体 实习申请', limit = 20, mock = false } = {}) {
+export async function syncOutlookResumes({ query = '超级智能体 实习申请', limit = 20, mock = false, requisitionId = '' } = {}) {
   if (mock) {
     const candidate = await upsertCandidate({
       id: newId('cand'),
+      requisitionId,
       name: '张婧仪',
       email: 'jingyi@example.com',
       source: 'mock',
@@ -449,7 +451,7 @@ export async function syncOutlookResumes({ query = '超级智能体 实习申请
       await fs.writeFile(tempPath, buffer);
       const resumeText = await extractResumeText(tempPath, attachment.contentType);
       await fs.rm(tempPath, { force: true });
-      imported.push(await importCandidateFromResume({ message, attachment, buffer, resumeText }));
+      imported.push(await importCandidateFromResume({ message, attachment, buffer, resumeText, requisitionId }));
     }
   }
 

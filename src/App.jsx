@@ -47,6 +47,14 @@ const defaultUserDraft = {
   role: 'member',
   status: 'active'
 };
+const defaultProjectDraft = {
+  name: '新设置的招聘项目',
+  teamName: '',
+  owner: '',
+  positionType: '',
+  sourceConfigSummary: '',
+  jdSummary: ''
+};
 
 function storedAccessToken() {
   return window.localStorage?.getItem('leai_session_token') || window.localStorage?.getItem('leai_app_token') || '';
@@ -207,9 +215,9 @@ const candidateStageViews = ['screening', 'schedule', 'interview', 'onboarding']
 
 const stageMeta = {
   screening: {
-    title: '简历筛选',
-    description: '按岗位匹配度、可靠度和风险备注筛选候选人',
-    columns: ['姓名', '电话', '匹配分', '状态'],
+    title: '项目候选人池',
+    description: '只显示当前招聘项目下的投递关系；评分、面试、Offer 按项目独立记录',
+    columns: ['姓名', '来源', '匹配分', '状态'],
     columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(58px, 0.72fr)'
   },
   schedule: {
@@ -1319,7 +1327,7 @@ function stageCells(candidate, view) {
   }
   return [
     candidate.name || candidateEmail(candidate) || candidate.id,
-    candidatePhone(candidate) || displayContact(candidate),
+    candidate.source || '新设置的来源',
     candidate.screening?.score ?? '待筛',
     <ListStatusBadge value={screeningListStatus(candidate)} />
   ];
@@ -1343,7 +1351,7 @@ function reviewText(candidate) {
 
 function workflowViewLabel(view) {
   if (view === 'overview') return '总览';
-  if (view === 'intake') return '投递采集';
+  if (view === 'intake') return '导入与来源';
   return stageMeta[view]?.title || '当前环节';
 }
 
@@ -1890,7 +1898,10 @@ function App() {
     outlook: false
   });
   const [health, setHealth] = useState(null);
+  const [requisitions, setRequisitions] = useState([]);
+  const [currentRequisition, setCurrentRequisition] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  const [candidateLibrary, setCandidateLibrary] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [runs, setRuns] = useState([]);
   const [notice, setNotice] = useState('');
@@ -1936,6 +1947,7 @@ function App() {
   const [users, setUsers] = useState([]);
   const [userDraft, setUserDraft] = useState(defaultUserDraft);
   const [passwordDrafts, setPasswordDrafts] = useState({});
+  const [projectDraft, setProjectDraft] = useState(defaultProjectDraft);
 
   const selected = useMemo(
     () => candidates.find((candidate) => candidate.id === selectedId) || candidates[0] || null,
@@ -2009,14 +2021,19 @@ function App() {
   const larkAutoSyncInterval = Number(health?.config?.lark?.autoSyncIntervalMinutes || 5);
 
   async function refresh() {
-    const [nextHealth, nextCandidates, nextRuns, nextTemplate] = await Promise.all([
+    const [nextHealth, nextProjects, nextCandidates, nextLibrary, nextRuns, nextTemplate] = await Promise.all([
       api('/api/health'),
+      api('/api/requisitions'),
       api('/api/candidates'),
+      api('/api/candidate-library'),
       api('/api/verification'),
       api('/api/settings/interview-template')
     ]);
     setHealth(nextHealth);
+    setCurrentRequisition(nextProjects.current || nextHealth.requisition || null);
+    setRequisitions(nextProjects.requisitions || []);
     setCandidates(nextCandidates);
+    setCandidateLibrary(nextLibrary);
     setRuns(nextRuns);
     setInterviewTemplate(nextTemplate);
     if (!templateDirty) setTemplateDraft(nextTemplate.template);
@@ -2231,7 +2248,7 @@ function App() {
       api('/api/outlook/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mock: true })
+        body: JSON.stringify({ mock: true, requisitionId: currentRequisition?.id })
       })
     );
   }
@@ -2241,7 +2258,7 @@ function App() {
       api('/api/outlook/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: syncQuery, limit: 30 })
+        body: JSON.stringify({ query: syncQuery, limit: 30, requisitionId: currentRequisition?.id })
       })
     );
   }
@@ -2256,7 +2273,7 @@ function App() {
       api('/api/lark/fields', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(larkConfig)
+        body: JSON.stringify({ ...larkConfig, requisitionId: currentRequisition?.id })
       })
     );
     if (result?.fields) setLarkFields(result.fields);
@@ -2288,6 +2305,35 @@ function App() {
       setSelectedId(result.imported[0].id);
     }
     if (result?.imported?.length) setActiveView('interview');
+  }
+
+  async function switchRequisition(requisitionId) {
+    const result = await runAction('切换招聘项目', () =>
+      api(`/api/requisitions/${requisitionId}/current`, { method: 'POST' })
+    );
+    if (result?.current) {
+      setCurrentRequisition(result.current);
+      setRequisitions(result.requisitions || []);
+      setSelectedId('');
+      setActiveView('screening');
+    }
+  }
+
+  async function createRequisition(event) {
+    event.preventDefault();
+    const result = await runAction('新建招聘项目', () =>
+      api('/api/requisitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(projectDraft)
+      })
+    );
+    if (result?.current) {
+      setCurrentRequisition(result.current);
+      setProjectDraft(defaultProjectDraft);
+      setSelectedId('');
+      setActiveView('screening');
+    }
   }
 
   async function loadUsers() {
@@ -2375,7 +2421,10 @@ function App() {
     setAccessToken('');
     setCurrentUser(null);
     setSecurity((current) => ({ ...(current || {}), authenticated: false, user: null, authMode: 'none' }));
+    setRequisitions([]);
+    setCurrentRequisition(null);
     setCandidates([]);
+    setCandidateLibrary([]);
     setRuns([]);
     setSelectedId('');
     setUsers([]);
@@ -2389,6 +2438,7 @@ function App() {
   async function uploadResume(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (currentRequisition?.id) form.set('requisitionId', currentRequisition.id);
     const file = form.get('resume');
     if (!(file instanceof File) || !file.name) {
       setNotice('请选择 Word 或 PDF 简历文件。');
@@ -2872,6 +2922,15 @@ function App() {
   const larkFormShareUrl = health?.config?.lark?.formShareUrl;
   const larkBaseUrl = health?.config?.lark?.baseUrl;
   const larkTableId = health?.config?.lark?.tableId || 'tblAg0ejOVZePTOI';
+  const activeRequisition =
+    currentRequisition ||
+    health?.requisition ||
+    requisitions.find((item) => item.isCurrent) ||
+    requisitions[0] ||
+    null;
+  const activeRequisitionLabel = activeRequisition
+    ? `${activeRequisition.teamName || '未设置团队'} / ${activeRequisition.name}`
+    : '默认招聘项目';
   const interviewSheetVisible = Boolean(health?.config?.interviewSheet?.enabled);
   const interviewSheetUrl = health?.config?.interviewSheet?.url;
   const interviewSheetReady = Boolean(
@@ -2915,49 +2974,36 @@ function App() {
     <main className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`} data-ui-version="match-rubric-20260528">
       <aside className="side-nav">
         <div className="brand-block">
-          <strong>乐享AI招聘</strong>
-          <span>Intern Ops</span>
+          <strong>Recruiting Ops</strong>
+          <span>通用招聘项目工作台</span>
         </div>
         <nav>
           <SidebarButton
-            active={activeView === 'overview'}
+            active={candidateStageViews.includes(activeView) || activeView === 'overview'}
             icon={<LayoutDashboard size={17} />}
-            label="总览"
-            onClick={() => setActiveView('overview')}
+            label="项目工作台"
+            meta={String(candidates.length)}
+            onClick={() => setActiveView('screening')}
+          />
+          <SidebarButton
+            active={activeView === 'library'}
+            icon={<Users size={17} />}
+            label="候选人总库"
+            meta={String(candidateLibrary.length)}
+            onClick={() => setActiveView('library')}
           />
           <SidebarButton
             active={activeView === 'intake'}
             icon={<Database size={17} />}
-            label="投递采集"
+            label="导入与来源"
             onClick={() => setActiveView('intake')}
           />
           <SidebarButton
-            active={activeView === 'screening'}
-            icon={<FileSearch size={17} />}
-            label="简历筛选"
-            meta={String(pipelineCounts.screening)}
-            onClick={() => setActiveView('screening')}
-          />
-          <SidebarButton
-            active={activeView === 'schedule'}
-            icon={<CalendarPlus size={17} />}
-            label="面试安排"
-            meta={String(pipelineCounts.schedule)}
-            onClick={() => setActiveView('schedule')}
-          />
-          <SidebarButton
-            active={activeView === 'interview'}
-            icon={<ListChecks size={17} />}
-            label="面试记录"
-            meta={String(pipelineCounts.interview)}
-            onClick={() => setActiveView('interview')}
-          />
-          <SidebarButton
-            active={activeView === 'onboarding'}
-            icon={<CheckCircle2 size={17} />}
-            label="Offer/入职"
-            meta={String(pipelineCounts.onboarding)}
-            onClick={() => setActiveView('onboarding')}
+            active={activeView === 'project-settings'}
+            icon={<Settings size={17} />}
+            label="项目设置"
+            meta={String(requisitions.length || '')}
+            onClick={() => setActiveView('project-settings')}
           />
           <SidebarButton
             active={activeView === 'verification'}
@@ -2993,8 +3039,8 @@ function App() {
               {navCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
             <div>
-              <h1>乐享AI实习生招聘工作台</h1>
-              <p>飞书投递、AI 筛选、Outlook 日程邀请和 Teams 面试链接</p>
+              <h1>招聘项目工作台</h1>
+              <p>{activeRequisitionLabel} · 项目配置决定 JD、来源、流程和模板</p>
             </div>
           </div>
           <div className="topbar-actions">
@@ -3013,9 +3059,35 @@ function App() {
           </div>
         </header>
 
-        {activeView === 'intake' || candidateStageViews.includes(activeView) ? (
-          <WorkflowRail activeView={activeView} counts={pipelineCounts} onNavigate={setActiveView} />
-        ) : null}
+        <section className="project-bar live-project-bar">
+          <div className="project-current">
+            <span>当前招聘项目</span>
+            <strong>{activeRequisition?.name || 'AI 产品经理实习生'}</strong>
+            <div className="meta">
+              <span>团队/业务线：{activeRequisition?.teamName || '乐享AI'}</span>
+              <span> · 负责人：{activeRequisition?.owner || '未设置'}</span>
+              <span> · 来源配置：{activeRequisition?.sourceConfigSummary || '新设置的来源'}</span>
+            </div>
+          </div>
+          <div className="project-switch">
+            {requisitions.slice(0, 3).map((project) => (
+              <button
+                key={project.id}
+                className={`project-card-button ${project.isCurrent || project.id === activeRequisition?.id ? 'active' : ''}`}
+                type="button"
+                onClick={() => switchRequisition(project.id)}
+                disabled={Boolean(busy) || project.id === activeRequisition?.id}
+              >
+                <span>{project.teamName || '团队/业务线自由配置'}</span>
+                <strong>{project.name}</strong>
+                <span>{project.candidateCount || 0} 位候选人 · {project.status === 'active' ? '进行中' : project.status}</span>
+              </button>
+            ))}
+          </div>
+          <button className="project-settings-button" onClick={() => setActiveView('project-settings')}>
+            项目设置
+          </button>
+        </section>
 
         {showStatusBand ? (
           <section className="status-band">
@@ -3047,6 +3119,134 @@ function App() {
             <div className="summary-card">
               <span>最近验证</span>
               <strong>{runs[0]?.status || '待运行'}</strong>
+            </div>
+          </section>
+        ) : null}
+
+        {activeView === 'library' ? (
+          <section className="library-page">
+            <div className="account-header">
+              <div>
+                <h2>候选人总库</h2>
+                <p>基础档案和简历只保留一份；项目候选人池记录每个招聘项目下的状态、评分、面试和 Offer。</p>
+              </div>
+              <span className="candidate-count">{candidateLibrary.length} 位候选人</span>
+            </div>
+            <div className="library-list">
+              {candidateLibrary.map((candidate) => (
+                <article key={candidate.id} className="library-row">
+                  <div>
+                    <strong>{candidate.name || candidate.emailMasked || candidate.phoneMasked || candidate.id}</strong>
+                    <span>{candidate.school || '学校待补充'} · {candidate.source || '来源待补充'}</span>
+                  </div>
+                  <dl>
+                    <dt>邮箱</dt>
+                    <dd>{candidate.emailMasked || '未填'}</dd>
+                    <dt>电话</dt>
+                    <dd>{candidate.phoneMasked || '未填'}</dd>
+                    <dt>最近项目</dt>
+                    <dd>{candidate.requisition?.name || '默认项目'}</dd>
+                  </dl>
+                </article>
+              ))}
+              {!candidateLibrary.length ? (
+                <EmptyState title="暂无候选人总库数据" description="从导入与来源同步或手工上传简历后，这里会沉淀候选人基础档案。" />
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {activeView === 'project-settings' ? (
+          <section className="project-settings-page">
+            <div className="account-header">
+              <div>
+                <h2>项目设置</h2>
+                <p>团队、岗位、JD、来源和负责人都由招聘项目配置，不再写死为某一个团队。</p>
+              </div>
+              <button className="ghost-button" onClick={refresh} disabled={Boolean(busy)}>
+                <RefreshCw size={16} />
+                刷新项目
+              </button>
+            </div>
+            <div className="project-settings-layout">
+              <section className="panel">
+                <h3>已有招聘项目</h3>
+                <div className="project-list">
+                  {requisitions.map((project) => (
+                    <article key={project.id} className={`project-list-card ${project.id === activeRequisition?.id ? 'active' : ''}`}>
+                      <div>
+                        <span>{project.teamName || '未设置团队'}</span>
+                        <strong>{project.name}</strong>
+                        <small>{project.candidateCount || 0} 位候选人 · {project.owner || '未设置负责人'}</small>
+                      </div>
+                      <button
+                        className="compact-button"
+                        onClick={() => switchRequisition(project.id)}
+                        disabled={Boolean(busy) || project.id === activeRequisition?.id}
+                      >
+                        {project.id === activeRequisition?.id ? '当前项目' : '切换'}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <section className="panel">
+                <h3>新建招聘项目</h3>
+                <form className="project-form" onSubmit={createRequisition}>
+                  <label>
+                    项目名称
+                    <input
+                      value={projectDraft.name}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, name: event.target.value })}
+                      placeholder="例如 AI 产品经理实习生"
+                      required
+                    />
+                  </label>
+                  <label>
+                    团队/业务线
+                    <input
+                      value={projectDraft.teamName}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, teamName: event.target.value })}
+                      placeholder="自由输入，不限定团队标签"
+                    />
+                  </label>
+                  <label>
+                    负责人
+                    <input
+                      value={projectDraft.owner}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, owner: event.target.value })}
+                      placeholder="选择或输入负责人"
+                    />
+                  </label>
+                  <label>
+                    岗位类型
+                    <input
+                      value={projectDraft.positionType}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, positionType: event.target.value })}
+                      placeholder="产品 / 设计 / 运营 / 研发 / 其他"
+                    />
+                  </label>
+                  <label className="wide">
+                    来源配置
+                    <input
+                      value={projectDraft.sourceConfigSummary}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, sourceConfigSummary: event.target.value })}
+                      placeholder="例如 飞书表单 + Outlook + 手工上传"
+                    />
+                  </label>
+                  <label className="wide">
+                    JD 与筛选标准
+                    <textarea
+                      value={projectDraft.jdSummary}
+                      onChange={(event) => setProjectDraft({ ...projectDraft, jdSummary: event.target.value })}
+                      placeholder="粘贴 JD，配置硬性条件、加分项、风险项和面试重点"
+                    />
+                  </label>
+                  <button type="submit" disabled={Boolean(busy)}>
+                    新建并切换
+                  </button>
+                </form>
+              </section>
             </div>
           </section>
         ) : null}
