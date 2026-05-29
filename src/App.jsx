@@ -211,12 +211,14 @@ function EmptyState({ title, description }) {
   );
 }
 
-const candidateStageViews = ['screening', 'schedule', 'interview', 'onboarding'];
+const projectPoolColumns = ['姓名', '来源', '匹配分', '当前阶段'];
+const projectPoolColumnTemplate = 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(64px, 0.78fr)';
+const poolFilterOptions = ['全部', '待筛选', '待面邀', '待面评', 'Offer跟进'];
 
 const stageMeta = {
   screening: {
-    title: '项目候选人池',
-    description: '只显示当前招聘项目下的投递关系；评分、面试、Offer 按项目独立记录',
+    title: '简历筛选',
+    description: '查看 AI 匹配、风险追问和人工筛选判断',
     columns: ['姓名', '来源', '匹配分', '状态'],
     columnTemplate: 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(58px, 0.72fr)'
   },
@@ -1253,7 +1255,9 @@ function statusTone(value) {
       '等待候选人确认',
       '待重新安排',
       '申请改期',
-      'Outlook日程待发送'
+      'Outlook日程待发送',
+      '待面评',
+      '待Offer'
     ].includes(value)
   ) return 'pending';
   return 'neutral';
@@ -1297,6 +1301,47 @@ function filterCandidatesByStage(candidates, view) {
     });
   }
   return candidates.filter((candidate) => candidate.source !== 'interview-sheet');
+}
+
+function candidatePoolStage(candidate) {
+  const record = latestInterviewRecord(candidate);
+  const hasOfferRecord = Boolean(candidate?.offer || candidate?.offerRecords?.length);
+  if (hasOfferRecord || /offer|入职/i.test(candidate?.status || '')) return 'Offer跟进';
+  if (record) return '待Offer';
+  if (['web-sent-confirmed', 'graph-sent'].includes(candidate?.interview?.inviteStatus)) return '待面评';
+  if (candidate?.interview?.start || candidate?.manualReview?.decision === 'pass') return candidateScheduleStatus(candidate);
+  return screeningListStatus(candidate);
+}
+
+function candidateMatchesPoolFilter(candidate, filter) {
+  if (candidate?.source === 'interview-sheet') return false;
+  const record = latestInterviewRecord(candidate);
+  const hasOfferRecord = Boolean(candidate?.offer || candidate?.offerRecords?.length);
+  const scheduled = ['web-sent-confirmed', 'graph-sent'].includes(candidate?.interview?.inviteStatus);
+  if (filter === '待筛选') return !candidate?.manualReview?.decision;
+  if (filter === '待面邀') {
+    return candidate?.manualReview?.decision === 'pass' && !scheduled && !record && !hasOfferRecord;
+  }
+  if (filter === '待面评') {
+    return Boolean(candidate?.interview || scheduled) && !record && !hasOfferRecord;
+  }
+  if (filter === 'Offer跟进') {
+    return hasOfferRecord || /offer|入职/i.test(candidate?.status || '') || Boolean(record);
+  }
+  return true;
+}
+
+function filterCandidatesByPool(candidates, filter) {
+  return candidates.filter((candidate) => candidateMatchesPoolFilter(candidate, filter));
+}
+
+function candidatePoolCells(candidate) {
+  return [
+    candidate.name || candidateEmail(candidate) || candidate.id,
+    candidate.source || '新设置的来源',
+    candidate.screening?.score ?? '待筛',
+    <ListStatusBadge value={candidatePoolStage(candidate)} />
+  ];
 }
 
 function stageCells(candidate, view) {
@@ -1450,7 +1495,7 @@ function candidateNextAction(candidate) {
     }
     if (!hasOfferRecord) {
       return {
-        title: '进入 Offer 跟进',
+        title: '打开 Offer 跟进',
         description: '根据面试结论记录 Offer 状态、到岗时间和跟进备注。',
         targetView: 'onboarding',
         tone: 'current'
@@ -1702,23 +1747,32 @@ function WorkflowRail({ activeView, counts, onNavigate }) {
   );
 }
 
-function CandidateJourneyCard({ candidate, activeView, onNavigate }) {
+function CandidateJourneyCard({ candidate, taskView, onNavigate }) {
   const nextAction = candidateNextAction(candidate);
   const steps = candidateJourneySteps(candidate);
   if (!nextAction) return null;
 
   return (
     <section className="candidate-journey">
+      <div className="candidate-journey-head">
+        <span>候选人进度</span>
+        <strong>{workflowViewLabel(taskView)}</strong>
+      </div>
       <div className="candidate-journey-steps" aria-label="候选人进度">
         {steps.map((step) => (
           <button
             key={step.view}
-            className={`candidate-step candidate-step-${step.tone} ${activeView === step.view ? 'active' : ''}`}
+            className={`candidate-step candidate-step-${step.tone} ${taskView === step.view ? 'active' : ''}`}
             onClick={() => onNavigate(step.view)}
             type="button"
           >
-            <span>{step.label}</span>
-            <strong>{step.status}</strong>
+            <span className="candidate-step-mark" aria-hidden="true">
+              {step.tone === 'done' ? <CheckCircle2 size={14} /> : step.tone === 'stopped' ? <AlertTriangle size={14} /> : null}
+            </span>
+            <span className="candidate-step-copy">
+              <span>{step.label}</span>
+              <strong>{step.status}</strong>
+            </span>
           </button>
         ))}
       </div>
@@ -1728,9 +1782,9 @@ function CandidateJourneyCard({ candidate, activeView, onNavigate }) {
           <strong>{nextAction.title}</strong>
           <p>{nextAction.description}</p>
         </div>
-        {nextAction.targetView && nextAction.targetView !== activeView ? (
+        {nextAction.targetView && nextAction.targetView !== taskView ? (
           <button className="ghost-button compact-button" onClick={() => onNavigate(nextAction.targetView)} type="button">
-            进入{workflowViewLabel(nextAction.targetView)}
+            打开{workflowViewLabel(nextAction.targetView)}
           </button>
         ) : null}
       </div>
@@ -1889,7 +1943,8 @@ function App() {
   const [accessToken, setAccessToken] = useState(() => storedAccessToken());
   const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: 'chenbk1', password: '' });
-  const [activeView, setActiveView] = useState('screening');
+  const [activeView, setActiveView] = useState('workbench');
+  const [taskView, setTaskView] = useState('screening');
   const [navCollapsed, setNavCollapsed] = useState(() => storedNavCollapsed());
   const [openPanels, setOpenPanels] = useState({
     larkForm: true,
@@ -1907,6 +1962,7 @@ function App() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
   const [candidateQuery, setCandidateQuery] = useState('');
+  const [poolFilter, setPoolFilter] = useState('全部');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [candidatePage, setCandidatePage] = useState(1);
   const [syncQuery, setSyncQuery] = useState('超级智能体 实习申请');
@@ -1956,19 +2012,27 @@ function App() {
 
   const interviewTimeOptions = useMemo(() => buildInterviewTimeOptions(candidates, selected?.id), [candidates, selected?.id]);
   const stageCandidates = useMemo(
-    () => sortCandidatesForStage(filterCandidatesByStage(candidates, activeView), activeView),
-    [activeView, candidates]
+    () => sortCandidatesForStage(filterCandidatesByPool(candidates, poolFilter), 'screening'),
+    [candidates, poolFilter]
   );
 
   const statusOptions = useMemo(
-    () => ['全部', ...Array.from(new Set(stageCandidates.map((item) => stageFilterStatus(item, activeView)).filter(Boolean)))],
-    [activeView, stageCandidates]
+    () => ['全部', ...Array.from(new Set(stageCandidates.map((item) => candidatePoolStage(item)).filter(Boolean)))],
+    [stageCandidates]
+  );
+
+  const poolFilterCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        poolFilterOptions.map((filter) => [filter, filterCandidatesByPool(candidates, filter).length])
+      ),
+    [candidates]
   );
 
   const filteredCandidates = useMemo(() => {
     const query = candidateQuery.trim().toLowerCase();
     return stageCandidates.filter((candidate) => {
-      const stageStatus = stageFilterStatus(candidate, activeView);
+      const stageStatus = candidatePoolStage(candidate);
       const statusMatched = statusFilter === '全部' || stageStatus === statusFilter;
       const haystack = [
         candidate.name,
@@ -1991,13 +2055,13 @@ function App() {
         .toLowerCase();
       return statusMatched && (!query || haystack.includes(query));
     });
-  }, [activeView, candidateQuery, stageCandidates, statusFilter]);
+  }, [candidateQuery, stageCandidates, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
   const page = Math.min(candidatePage, totalPages);
   const pagedCandidates = filteredCandidates.slice((page - 1) * pageSize, page * pageSize);
   const selectedFilteredIndex = selected ? filteredCandidates.findIndex((candidate) => candidate.id === selected.id) : -1;
-  const hasCandidateSwitcher = candidateStageViews.includes(activeView) && selectedFilteredIndex >= 0 && filteredCandidates.length > 1;
+  const hasCandidateSwitcher = activeView === 'workbench' && selectedFilteredIndex >= 0 && filteredCandidates.length > 1;
   const selectedBatchCandidates = useMemo(
     () => candidates.filter((candidate) => batchSelection.includes(candidate.id)),
     [batchSelection, candidates]
@@ -2097,11 +2161,11 @@ function App() {
 
   useEffect(() => {
     setCandidatePage(1);
-    if (activeView !== 'schedule') setBatchSelection([]);
-  }, [activeView, candidateQuery, statusFilter]);
+    if (poolFilter !== '待面邀') setBatchSelection([]);
+  }, [candidateQuery, poolFilter, statusFilter]);
 
   useEffect(() => {
-    if (!candidateStageViews.includes(activeView) || !stageCandidates.length) return;
+    if (activeView !== 'workbench' || !stageCandidates.length) return;
     if (!stageCandidates.some((candidate) => candidate.id === selectedId)) {
       setSelectedId(stageCandidates[0].id);
     }
@@ -2289,7 +2353,8 @@ function App() {
     );
     if (result?.imported?.[0]?.id) {
       setSelectedId(result.imported[0].id);
-      setActiveView('screening');
+      setActiveView('workbench');
+      setTaskView('screening');
     }
   }
 
@@ -2304,7 +2369,10 @@ function App() {
     if (result?.imported?.[0]?.id && !selectedId) {
       setSelectedId(result.imported[0].id);
     }
-    if (result?.imported?.length) setActiveView('interview');
+    if (result?.imported?.length) {
+      setActiveView('workbench');
+      setTaskView('interview');
+    }
   }
 
   async function switchRequisition(requisitionId) {
@@ -2315,7 +2383,9 @@ function App() {
       setCurrentRequisition(result.current);
       setRequisitions(result.requisitions || []);
       setSelectedId('');
-      setActiveView('screening');
+      setPoolFilter('全部');
+      setActiveView('workbench');
+      setTaskView('screening');
     }
   }
 
@@ -2332,7 +2402,9 @@ function App() {
       setCurrentRequisition(result.current);
       setProjectDraft(defaultProjectDraft);
       setSelectedId('');
-      setActiveView('screening');
+      setPoolFilter('全部');
+      setActiveView('workbench');
+      setTaskView('screening');
     }
   }
 
@@ -2522,7 +2594,7 @@ function App() {
   async function reviewSelected(decision) {
     if (!selected) return;
     const nextScreeningCandidateId =
-      (decision === 'pass' || decision === 'reject') && activeView === 'screening'
+      (decision === 'pass' || decision === 'reject') && taskView === 'screening'
         ? nextCandidateIdAfterCurrent(filteredCandidates, selected.id)
         : '';
     const labels = {
@@ -2543,10 +2615,10 @@ function App() {
       if (nextIndex >= 0) setCandidatePage(Math.floor(nextIndex / pageSize) + 1);
       if (decision === 'pass') {
         setNotice(nextScreeningCandidateId ? '已通过，继续筛选下一位；需要排期时进入面试安排。' : '已通过，已切到面试安排继续排期。');
-        setActiveView(nextScreeningCandidateId ? 'screening' : 'schedule');
+        setTaskView(nextScreeningCandidateId ? 'screening' : 'schedule');
       }
-      if (decision === 'reject') setActiveView('screening');
-      if (decision === 'undo') setActiveView('screening');
+      if (decision === 'reject') setTaskView('screening');
+      if (decision === 'undo') setTaskView('screening');
     }
   }
 
@@ -2979,11 +3051,11 @@ function App() {
         </div>
         <nav>
           <SidebarButton
-            active={candidateStageViews.includes(activeView) || activeView === 'overview'}
+            active={activeView === 'workbench' || activeView === 'overview'}
             icon={<LayoutDashboard size={17} />}
             label="项目工作台"
             meta={String(candidates.length)}
-            onClick={() => setActiveView('screening')}
+            onClick={() => setActiveView('workbench')}
           />
           <SidebarButton
             active={activeView === 'library'}
@@ -3437,39 +3509,53 @@ function App() {
           </section>
         ) : null}
 
-        {candidateStageViews.includes(activeView) ? (
+        {activeView === 'workbench' ? (
           <section className="main-grid">
-            <aside className="candidate-pane" data-view={activeView}>
+            <aside className="candidate-pane" data-view="workbench">
               <div className="pane-title">
                 <div className="pane-title-main">
                   <div className="pane-heading-row">
-                    <h2>{stageMeta[activeView].title}</h2>
+                    <h2>项目候选人池</h2>
                     <small className="candidate-count">{filteredCandidates.length}/{stageCandidates.length}</small>
                   </div>
-                  {activeView === 'screening' ? (
-                    <div className="pane-action-row">
-                      <button
-                        className="compact-button"
-                        onClick={syncLark}
-                        disabled={Boolean(busy) || !larkCanSync}
-                        title="立即同步飞书表单投递"
-                      >
-                        <Inbox size={15} />
-                        同步表单投递
-                      </button>
-                      <button
-                        className="compact-button"
-                        onClick={rescreenCurrentList}
-                        disabled={Boolean(busy) || !filteredCandidates.length}
-                        title="按当前搜索和状态筛选结果批量评估岗位匹配度"
-                      >
-                        <FileSearch size={15} />
-                        AI批量评估
-                      </button>
-                    </div>
-                  ) : null}
-                  <small className="pane-description">{stageMeta[activeView].description}</small>
+                  <div className="pane-action-row">
+                    <button
+                      className="compact-button"
+                      onClick={syncLark}
+                      disabled={Boolean(busy) || !larkCanSync}
+                      title="立即同步飞书表单投递"
+                    >
+                      <Inbox size={15} />
+                      同步表单投递
+                    </button>
+                    <button
+                      className="compact-button"
+                      onClick={rescreenCurrentList}
+                      disabled={Boolean(busy) || !filteredCandidates.length}
+                      title="按当前搜索和状态筛选结果批量评估岗位匹配度"
+                    >
+                      <FileSearch size={15} />
+                      AI批量评估
+                    </button>
+                  </div>
+                  <small className="pane-description">当前项目投递关系；评分、面试、Offer 按项目独立记录</small>
                 </div>
+              </div>
+              <div className="pool-filter-tabs" aria-label="项目池筛选">
+                {poolFilterOptions.map((filter) => (
+                  <button
+                    key={filter}
+                    className={poolFilter === filter ? 'active' : ''}
+                    onClick={() => {
+                      setPoolFilter(filter);
+                      setStatusFilter('全部');
+                    }}
+                    type="button"
+                  >
+                    <span>{filter}</span>
+                    <strong>{poolFilterCounts[filter] || 0}</strong>
+                  </button>
+                ))}
               </div>
               <div className="candidate-tools">
                 <label className="search-box">
@@ -3486,31 +3572,29 @@ function App() {
                   ))}
                 </select>
               </div>
-              {activeView === 'screening' ? (
-                <details className="upload-drawer">
-                  <summary>
+              <details className="upload-drawer">
+                <summary>
+                  <Upload size={16} />
+                  <span>上传简历</span>
+                </summary>
+                <form className="upload-form" onSubmit={uploadResume}>
+                  <input name="name" placeholder="姓名" />
+                  <input name="email" placeholder="联系邮箱" type="email" />
+                  <input name="phone" placeholder="联系电话" inputMode="tel" />
+                  <label className="file-input">
                     <Upload size={16} />
-                    <span>上传简历</span>
-                  </summary>
-                  <form className="upload-form" onSubmit={uploadResume}>
-                    <input name="name" placeholder="姓名" />
-                    <input name="email" placeholder="联系邮箱" type="email" />
-                    <input name="phone" placeholder="联系电话" inputMode="tel" />
-                    <label className="file-input">
-                      <Upload size={16} />
-                      <span>{uploadFileName || '选择 Word/PDF'}</span>
-                      <input
-                        name="resume"
-                        type="file"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        onChange={(event) => setUploadFileName(event.target.files?.[0]?.name || '')}
-                      />
-                    </label>
-                    <button type="submit" disabled={Boolean(busy)}>上传</button>
-                  </form>
-                </details>
-              ) : null}
-              {activeView === 'schedule' ? (
+                    <span>{uploadFileName || '选择 Word/PDF'}</span>
+                    <input
+                      name="resume"
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={(event) => setUploadFileName(event.target.files?.[0]?.name || '')}
+                    />
+                  </label>
+                  <button type="submit" disabled={Boolean(busy)}>上传</button>
+                </form>
+              </details>
+              {poolFilter === '待面邀' ? (
                 <div className="batch-toolbar">
                   <span>已选 {batchSelection.length}</span>
                   <button className="ghost-button" onClick={selectCurrentPageForBatch} disabled={Boolean(busy)}>
@@ -3534,11 +3618,11 @@ function App() {
                     <div
                       className="stage-row stage-header"
                       style={{
-                        '--cols': stageMeta[activeView].columns.length,
-                        '--stage-columns': stageMeta[activeView].columnTemplate || `repeat(${stageMeta[activeView].columns.length}, minmax(0, 1fr))`
+                        '--cols': projectPoolColumns.length,
+                        '--stage-columns': projectPoolColumnTemplate
                       }}
                     >
-                      {stageMeta[activeView].columns.map((column) => (
+                      {projectPoolColumns.map((column) => (
                         <span key={column}>{column}</span>
                       ))}
                     </div>
@@ -3547,8 +3631,8 @@ function App() {
                         key={candidate.id}
                         className={`stage-row ${selected?.id === candidate.id ? 'active' : ''}`}
                         style={{
-                          '--cols': stageMeta[activeView].columns.length,
-                          '--stage-columns': stageMeta[activeView].columnTemplate || `repeat(${stageMeta[activeView].columns.length}, minmax(0, 1fr))`
+                          '--cols': projectPoolColumns.length,
+                          '--stage-columns': projectPoolColumnTemplate
                         }}
                         role="button"
                         tabIndex={0}
@@ -3560,12 +3644,12 @@ function App() {
                           }
                         }}
                       >
-                        {stageCells(candidate, activeView).map((cell, index) => (
+                        {candidatePoolCells(candidate).map((cell, index) => (
                           <span
-                            key={`${candidate.id}-${stageMeta[activeView].columns[index]}`}
-                            data-label={stageMeta[activeView].columns[index]}
+                            key={`${candidate.id}-${projectPoolColumns[index]}`}
+                            data-label={projectPoolColumns[index]}
                           >
-                            {index === 0 && activeView === 'schedule' ? (
+                            {index === 0 && poolFilter === '待面邀' ? (
                               <label className="row-check" onClick={(event) => event.stopPropagation()}>
                                 <input
                                   type="checkbox"
@@ -3631,12 +3715,12 @@ function App() {
                         {detailLoadingId === selected.id ? <span>详情加载中</span> : null}
                       </div>
                     </div>
-                    <StatusPill value={activeView === 'schedule' ? candidateScheduleStatus(selected) : selected.status} />
+                    <StatusPill value={taskView === 'schedule' ? candidateScheduleStatus(selected) : selected.status} />
                   </div>
 
-                  <CandidateJourneyCard candidate={selected} activeView={activeView} onNavigate={setActiveView} />
+                  <CandidateJourneyCard candidate={selected} taskView={taskView} onNavigate={setTaskView} />
 
-                  <div className={`actions-row ${activeView === 'screening' ? 'screening-action-bar' : ''}`}>
+                  <div className={`actions-row ${taskView === 'screening' ? 'screening-action-bar' : ''}`}>
                     {hasCandidateSwitcher ? (
                       <div className="mobile-candidate-switcher">
                         <button
@@ -3663,7 +3747,7 @@ function App() {
                         </button>
                       </div>
                     ) : null}
-                    {activeView === 'screening' ? (
+                    {taskView === 'screening' ? (
                       <>
                         <button
                           className="screening-action-button screening-pass-button"
@@ -3693,7 +3777,7 @@ function App() {
                         ) : null}
                       </>
                     ) : null}
-                    {activeView === 'schedule' ? (
+                    {taskView === 'schedule' ? (
                       <>
                         <button
                           onClick={previewInterview}
@@ -3786,13 +3870,13 @@ function App() {
                         {scheduleActionHint ? <p className="action-hint">{scheduleActionHint}</p> : null}
                       </>
                     ) : null}
-                    {activeView === 'interview' ? (
+                    {taskView === 'interview' ? (
                       <button onClick={saveInterviewRecord} disabled={Boolean(busy)}>
                         <ListChecks size={16} />
                         保存面试记录
                       </button>
                     ) : null}
-                    {activeView === 'onboarding' ? (
+                    {taskView === 'onboarding' ? (
                       <>
                         <button onClick={saveOfferStatus} disabled={Boolean(busy)}>
                           <CheckCircle2 size={16} />
@@ -3806,7 +3890,7 @@ function App() {
                     ) : null}
                   </div>
 
-                  {activeView === 'screening' ? (
+                  {taskView === 'screening' ? (
                     <div className="screening-layout">
                       <section className="panel decision-panel">
                         <div className="panel-heading">
@@ -3884,7 +3968,7 @@ function App() {
                     </div>
                   ) : null}
 
-                  {activeView === 'schedule' ? (
+                  {taskView === 'schedule' ? (
                     <>
                     <ScheduleFlow candidate={selected} interviewHasStart={interviewHasStart} officialInviteSent={officialInviteSent} />
                     <div className="detail-columns">
@@ -4060,7 +4144,7 @@ function App() {
                     </>
                   ) : null}
 
-                  {activeView === 'interview' ? (
+                  {taskView === 'interview' ? (
                     <div className="detail-columns">
                       <section className="panel">
                         <h3>记录面试表现</h3>
@@ -4164,7 +4248,7 @@ function App() {
                     </div>
                   ) : null}
 
-                  {activeView === 'onboarding' ? (
+                  {taskView === 'onboarding' ? (
                     <div className="detail-columns">
                       <section className="panel">
                         <h3>Offer 接受情况</h3>

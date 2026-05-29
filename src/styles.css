@@ -952,6 +952,43 @@ pre {
   line-height: 1.35;
 }
 
+.pool-filter-tabs {
+  border-bottom: 1px solid #eef2f5;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 9px 10px 8px;
+  scrollbar-width: none;
+}
+
+.pool-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pool-filter-tabs button {
+  align-items: center;
+  background: #f7f9fb;
+  border-color: #dbe4ec;
+  color: #394b59;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+}
+
+.pool-filter-tabs button.active {
+  background: #e9f6f3;
+  border-color: #8bc7be;
+  color: var(--accent-strong);
+}
+
+.pool-filter-tabs strong {
+  color: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .pane-title h2,
 .detail-header h2,
 .verification h2 {
@@ -1294,9 +1331,27 @@ pre {
   background: linear-gradient(180deg, #fbfcfd 0%, #fff 100%);
   border-bottom: 1px solid #d8e0e8;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: 1fr;
   padding: 12px;
+}
+
+.candidate-journey-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.candidate-journey-head span {
+  color: #627384;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.candidate-journey-head strong {
+  color: #1f2933;
+  font-size: 13px;
 }
 
 .candidate-journey-steps {
@@ -1306,22 +1361,40 @@ pre {
 }
 
 .candidate-step {
-  align-items: start;
+  align-items: center;
   background: #fff;
   border-color: #dfe7ee;
   color: #1f2933;
-  display: grid;
-  gap: 4px;
-  justify-items: start;
+  display: flex;
+  gap: 7px;
   min-height: 58px;
   padding: 8px 9px;
   text-align: left;
 }
 
-.candidate-step span,
+.candidate-step-copy,
 .next-action span {
   color: #627384;
   font-size: 12px;
+}
+
+.candidate-step-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.candidate-step-mark {
+  align-items: center;
+  background: #f1f5f8;
+  border: 1px solid #dfe7ee;
+  border-radius: 999px;
+  color: #8b9aa7;
+  display: inline-flex;
+  flex: 0 0 22px;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
 }
 
 .candidate-step strong {
@@ -1339,15 +1412,34 @@ pre {
   border-color: #c7ead5;
 }
 
+.candidate-step-done .candidate-step-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .candidate-step-current,
 .candidate-step.active {
   background: #e9f6f3;
   border-color: #8bc7be;
 }
 
+.candidate-step-current .candidate-step-mark,
+.candidate-step.active .candidate-step-mark {
+  background: #fff;
+  border-color: #8bc7be;
+  box-shadow: inset 0 0 0 5px #d7eee9;
+}
+
 .candidate-step-stopped {
   background: #fff0ed;
   border-color: #ffc7bc;
+}
+
+.candidate-step-stopped .candidate-step-mark {
+  background: #b84635;
+  border-color: #b84635;
+  color: #fff;
 }
 
 .next-action {
@@ -3029,13 +3121,13 @@ pre {
     box-shadow: inset 3px 0 0 #176047, 0 6px 16px rgba(32, 42, 51, 0.08);
   }
 
-  .candidate-pane[data-view="screening"] .stage-row {
+  .candidate-pane[data-view="workbench"] .stage-row {
     align-items: center;
     gap: 5px 10px;
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span {
+  .candidate-pane[data-view="workbench"] .stage-row span {
     align-items: center;
     display: inline-flex;
     gap: 5px;
@@ -3046,29 +3138,29 @@ pre {
     white-space: nowrap;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span:first-child {
+  .candidate-pane[data-view="workbench"] .stage-row span:first-child {
     color: #202a33;
     font-size: 15px;
     grid-column: 1;
     grid-row: 1;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span:first-child::before,
-  .candidate-pane[data-view="screening"] .stage-row span:nth-child(4)::before {
+  .candidate-pane[data-view="workbench"] .stage-row span:first-child::before,
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(4)::before {
     content: "";
     display: none;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span.new-badge {
+  .candidate-pane[data-view="workbench"] .stage-row span.new-badge {
     color: #fff;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span:nth-child(2) {
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(2) {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span:nth-child(3) {
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(3) {
     color: var(--accent-strong);
     font-weight: 750;
     grid-column: 2;
@@ -3076,7 +3168,7 @@ pre {
     justify-self: end;
   }
 
-  .candidate-pane[data-view="screening"] .stage-row span:nth-child(4) {
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(4) {
     background: transparent;
     border: 0;
     border-radius: 0;
