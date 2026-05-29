@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>通用招聘项目工作台预览</title>
+    <style>
+      :root {
+        color: #202a33;
+        background: #eef3f6;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+        --accent: #0f766e;
+        --accent-strong: #0b5f58;
+        --accent-soft: #e7f5f2;
+        --blue: #1d4f8f;
+        --line: #d8e0e8;
+        --muted: #627384;
+        --surface: #fff;
+        --surface-soft: #f7f9fb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #eef3f6;
+        font-size: 14px;
+        line-height: 1.45;
+        margin: 0;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        align-items: center;
+        background: var(--accent);
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        color: #fff;
+        cursor: pointer;
+        display: inline-flex;
+        font-weight: 700;
+        gap: 6px;
+        justify-content: center;
+        min-height: 34px;
+        padding: 7px 11px;
+        white-space: nowrap;
+      }
+
+      button.secondary {
+        background: #fff;
+        border-color: #cbd5df;
+        color: #202a33;
+      }
+
+      input,
+      select,
+      textarea {
+        background: #fff;
+        border: 1px solid #cbd5df;
+        border-radius: 6px;
+        color: #202a33;
+        min-height: 34px;
+        padding: 7px 9px;
+        width: 100%;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 208px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .side {
+        background: #102a43;
+        color: #d9e2ec;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px 12px;
+      }
+
+      .brand {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+        display: grid;
+        gap: 4px;
+        padding: 4px 8px 16px;
+      }
+
+      .brand strong {
+        color: #fff;
+        font-size: 16px;
+      }
+
+      .brand span,
+      .side-foot {
+        color: #bcccdc;
+        font-size: 12px;
+      }
+
+      .side nav {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav-item {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: #d9e2ec;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        justify-content: start;
+        min-height: 38px;
+        min-width: 0;
+        padding: 8px 10px;
+        text-align: left;
+        white-space: normal;
+        width: 100%;
+      }
+
+      .nav-item.active,
+      .nav-item:hover {
+        background: #1f4666;
+      }
+
+      .nav-item small {
+        background: rgba(255, 255, 255, 0.13);
+        border-radius: 999px;
+        color: #fff;
+        padding: 1px 7px;
+      }
+
+      .nav-item span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .side-foot {
+        border-top: 1px solid rgba(255, 255, 255, 0.14);
+        margin-top: auto;
+        padding: 12px 8px 0;
+      }
+
+      .main {
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .topbar {
+        align-items: center;
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      .topbar h1 {
+        font-size: 22px;
+        margin-bottom: 2px;
+      }
+
+      .muted {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .topbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .project-bar {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(31, 41, 51, 0.05);
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr) auto;
+        margin-bottom: 12px;
+        padding: 12px;
+      }
+
+      .project-current {
+        border-right: 1px solid #e4eaf0;
+        display: grid;
+        gap: 4px;
+        padding-right: 12px;
+      }
+
+      .project-current span,
+      .meta span,
+      .label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .project-current strong {
+        font-size: 18px;
+      }
+
+      .project-switch {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .project-card {
+        background: #f8fafb;
+        border: 1px solid #dfe7ee;
+        border-radius: 8px;
+        cursor: pointer;
+        display: grid;
+        gap: 4px;
+        min-height: 72px;
+        padding: 9px 10px;
+      }
+
+      .project-card.active {
+        background: var(--accent-soft);
+        border-color: #8bc7be;
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+
+      .project-card strong,
+      .project-card span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .content-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
+      }
+
+      .lower-grid {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .panel {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(31, 41, 51, 0.05);
+        min-width: 0;
+      }
+
+      .panel-head {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        padding: 12px;
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        font-size: 16px;
+        margin: 0;
+      }
+
+      .candidate-tools {
+        border-bottom: 1px solid #eef2f5;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) 116px;
+        padding: 10px 12px;
+      }
+
+      .candidate-list {
+        display: grid;
+      }
+
+      .row {
+        align-items: center;
+        border-bottom: 1px solid #eef2f5;
+        cursor: pointer;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(82px, 1fr) minmax(92px, 0.9fr) minmax(56px, 0.5fr) minmax(72px, 0.65fr);
+        min-height: 52px;
+        padding: 8px 12px;
+      }
+
+      .row.active,
+      .row:hover {
+        background: #edf7f4;
+      }
+
+      .row strong,
+      .row span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pill {
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 800;
+        justify-content: center;
+        max-width: 100%;
+        padding: 4px 8px;
+      }
+
+      .pill.good {
+        background: #dff5e8;
+        color: #126b38;
+      }
+
+      .pill.wait {
+        background: #fff1cc;
+        color: #835b00;
+      }
+
+      .pill.info {
+        background: #e4f0ff;
+        color: #1b4f87;
+      }
+
+      .detail {
+        display: grid;
+        gap: 12px;
+      }
+
+      .candidate-header {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(31, 41, 51, 0.05);
+        height: fit-content;
+      }
+
+      .candidate-main {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        padding: 14px;
+      }
+
+      .candidate-main h2 {
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+
+      .journey {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        padding: 12px 14px;
+      }
+
+      .step {
+        background: #fff;
+        border: 1px solid #dfe7ee;
+        border-radius: 8px;
+        display: grid;
+        gap: 4px;
+        min-height: 62px;
+        padding: 8px 9px;
+      }
+
+      .step.done {
+        background: #effaf4;
+        border-color: #c7ead5;
+      }
+
+      .step.current {
+        background: var(--accent-soft);
+        border-color: #8bc7be;
+      }
+
+      .next-action {
+        border-top: 1px solid #eef2f5;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: 12px 14px;
+      }
+
+      .next-action strong {
+        display: block;
+      }
+
+      .two-col {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .config-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 12px;
+      }
+
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .source-list,
+      .model-list {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .source-item,
+      .model-item {
+        background: var(--surface-soft);
+        border: 1px solid #e4eaf0;
+        border-radius: 8px;
+        display: grid;
+        gap: 4px;
+        padding: 10px;
+      }
+
+      .source-item {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .source-item strong,
+      .source-item span,
+      .model-item strong,
+      .model-item span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .schema {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        padding: 12px;
+      }
+
+      .schema-card {
+        background: #fbfcfd;
+        border: 1px solid #e4eaf0;
+        border-radius: 8px;
+        display: grid;
+        gap: 5px;
+        min-height: 112px;
+        padding: 10px;
+      }
+
+      .schema-card strong {
+        color: var(--accent-strong);
+      }
+
+      .schema-card code {
+        background: #edf2f4;
+        border-radius: 4px;
+        color: #52616f;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        padding: 2px 5px;
+        width: fit-content;
+      }
+
+      .note {
+        background: #fff7e6;
+        border: 1px solid #f5d48a;
+        border-radius: 8px;
+        color: #6f4f00;
+        margin: 0 12px 12px;
+        padding: 10px 12px;
+      }
+
+      @media (max-width: 1120px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .side {
+          min-height: auto;
+          position: static;
+        }
+
+        .side nav {
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        }
+
+        .project-bar,
+        .content-grid,
+        .two-col,
+        .schema {
+          grid-template-columns: 1fr;
+        }
+
+        .project-current {
+          border-right: 0;
+          border-bottom: 1px solid #e4eaf0;
+          padding: 0 0 10px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .main {
+          padding: 12px;
+        }
+
+        .topbar,
+        .candidate-main,
+        .next-action {
+          align-items: stretch;
+          flex-direction: column;
+          grid-template-columns: 1fr;
+        }
+
+        .project-switch,
+        .journey,
+        .config-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .side nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .candidate-tools {
+          grid-template-columns: 1fr;
+        }
+
+        .row {
+          align-items: start;
+          border: 1px solid #e0e8ef;
+          border-radius: 8px;
+          grid-template-columns: 1fr;
+          margin: 8px 10px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="side">
+        <div class="brand">
+          <strong>Recruiting Ops</strong>
+          <span>通用招聘项目工作台</span>
+        </div>
+        <nav>
+          <button class="nav-item active"><span>01</span><span>项目工作台</span><small>当前</small></button>
+          <button class="nav-item"><span>02</span><span>候选人总库</span><small>248</small></button>
+          <button class="nav-item"><span>03</span><span>导入与来源</span><small>5</small></button>
+          <button class="nav-item"><span>04</span><span>设置与权限</span><small>新</small></button>
+        </nav>
+        <div class="side-foot">项目配置决定 JD、来源、流程和模板。</div>
+      </aside>
+
+      <section class="main">
+        <header class="topbar">
+          <div>
+            <h1>招聘项目工作台</h1>
+            <p class="muted">项目配置决定 JD、来源、流程和模板；团队、岗位、渠道都不写死。</p>
+          </div>
+          <div class="topbar-actions">
+            <button class="secondary">新建招聘项目</button>
+          </div>
+        </header>
+
+        <section class="project-bar">
+          <div class="project-current">
+            <span>当前招聘项目</span>
+            <strong>AI 产品经理实习生</strong>
+            <div class="meta">
+              <span>团队/业务线：乐享AI</span>
+              <span> · 负责人：陈百科</span>
+              <span> · 来源配置：新设置的飞书表单 + 手工上传</span>
+            </div>
+          </div>
+          <div class="project-switch" aria-label="招聘项目切换">
+            <div class="project-card active">
+              <span>团队/业务线自由配置</span>
+              <strong>AI 产品经理实习生</strong>
+              <span>36 位候选人 · 12 个待办</span>
+            </div>
+            <div class="project-card">
+              <span>任意团队可新建</span>
+              <strong>新设置的招聘项目</strong>
+              <span>0 位候选人 · 待配置 JD</span>
+            </div>
+          </div>
+          <button>项目设置</button>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>项目候选人池</h2>
+                <p class="muted">只显示当前招聘项目下的投递关系，不等于候选人总库。</p>
+              </div>
+              <span class="pill info">当前项目</span>
+            </div>
+            <div class="candidate-tools">
+              <input value="" placeholder="搜索姓名、学校、状态" />
+              <select>
+                <option>全部状态</option>
+                <option>待筛选</option>
+                <option>待面邀</option>
+                <option>待面评</option>
+              </select>
+            </div>
+            <div class="candidate-list">
+              <div class="row active">
+                <strong>候选人 A</strong>
+                <span>飞书表单</span>
+                <span>91</span>
+                <span class="pill wait">待面邀</span>
+              </div>
+              <div class="row">
+                <strong>候选人 B</strong>
+                <span>手工上传</span>
+                <span>86</span>
+                <span class="pill good">已通过</span>
+              </div>
+              <div class="row">
+                <strong>候选人 C</strong>
+                <span>Outlook</span>
+                <span>待评估</span>
+                <span class="pill wait">待筛选</span>
+              </div>
+              <div class="row">
+                <strong>候选人 D</strong>
+                <span>新设置的来源</span>
+                <span>78</span>
+                <span class="pill info">待面评</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="detail">
+            <section class="candidate-header">
+              <div class="candidate-main">
+                <div>
+                  <h2>候选人 A</h2>
+                  <p class="muted">总库档案只存一份；当前项目下单独记录评分、面试和 Offer。</p>
+                </div>
+                <button class="secondary">查看总库档案</button>
+              </div>
+              <div class="journey" aria-label="当前项目候选人旅程">
+                <div class="step done"><span class="label">入库</span><strong>已入库</strong></div>
+                <div class="step done"><span class="label">筛选</span><strong>已通过</strong></div>
+                <div class="step current"><span class="label">面邀</span><strong>待安排</strong></div>
+                <div class="step"><span class="label">面评</span><strong>未开始</strong></div>
+                <div class="step"><span class="label">Offer</span><strong>未开始</strong></div>
+              </div>
+              <div class="next-action">
+                <div>
+                  <span class="label">下一步</span>
+                  <strong>为当前项目安排面试</strong>
+                  <p class="muted">候选人可以同时存在于多个项目，但每个项目有独立旅程。</p>
+                </div>
+                <button>进入面试安排</button>
+              </div>
+            </section>
+          </section>
+        </section>
+
+        <section class="lower-grid" aria-label="项目配置评审区">
+            <div class="two-col">
+              <section class="panel">
+                <div class="panel-head">
+                  <h3>新建招聘项目</h3>
+                  <span class="pill wait">配置驱动</span>
+                </div>
+                <div class="config-grid">
+                  <label class="field">
+                    <span class="label">项目名称</span>
+                    <input value="新设置的招聘项目" />
+                  </label>
+                  <label class="field">
+                    <span class="label">团队/业务线</span>
+                    <input placeholder="自由输入，不限定团队标签" />
+                  </label>
+                  <label class="field">
+                    <span class="label">负责人</span>
+                    <input placeholder="选择或输入负责人" />
+                  </label>
+                  <label class="field">
+                    <span class="label">岗位类型</span>
+                    <input placeholder="产品 / 设计 / 运营 / 研发 / 其他" />
+                  </label>
+                  <label class="field wide">
+                    <span class="label">JD 与筛选标准</span>
+                    <textarea rows="4" placeholder="粘贴 JD，配置硬性条件、加分项、风险项和面试重点"></textarea>
+                  </label>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h3>导入与来源配置</h3>
+                  <button class="secondary">新增来源</button>
+                </div>
+                <div class="source-list">
+                  <div class="source-item">
+                    <div>
+                      <strong>飞书表单 / Base</strong>
+                      <span class="muted">每个项目可绑定不同表单、字段映射和附件字段。</span>
+                    </div>
+                    <span class="pill good">启用</span>
+                  </div>
+                  <div class="source-item">
+                    <div>
+                      <strong>Outlook 邮箱</strong>
+                      <span class="muted">按关键词同步，导入到当前项目候选人池。</span>
+                    </div>
+                    <span class="pill info">可选</span>
+                  </div>
+                  <div class="source-item">
+                    <div>
+                      <strong>新设置的来源</strong>
+                      <span class="muted">用户可新增任意渠道，不预设固定来源名称。</span>
+                    </div>
+                    <span class="pill wait">待配置</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>推荐底层模型</h3>
+                <p class="muted">先把“人”和“某次岗位申请”拆开，平台才有复用空间。</p>
+              </div>
+              <div class="schema">
+                <div class="schema-card">
+                  <code>workspace</code>
+                  <strong>组织/团队空间</strong>
+                  <span>团队名称是可配置字段，不是写死标签。</span>
+                </div>
+                <div class="schema-card">
+                  <code>requisition</code>
+                  <strong>招聘项目</strong>
+                  <span>一套 JD、流程、模板、来源和权限。</span>
+                </div>
+                <div class="schema-card">
+                  <code>candidate</code>
+                  <strong>候选人总库</strong>
+                  <span>基础档案、联系方式、简历文件只存一份。</span>
+                </div>
+                <div class="schema-card">
+                  <code>application</code>
+                  <strong>项目投递关系</strong>
+                  <span>状态、评分、面试、Offer 按项目独立记录。</span>
+                </div>
+              </div>
+              <p class="note">关键更正：这里没有“星社来源”。来源是用户在项目里新设置的导入配置，可以是飞书、Outlook、手工上传，或未来任何新渠道。</p>
+            </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
