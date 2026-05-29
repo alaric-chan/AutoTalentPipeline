@@ -211,8 +211,8 @@ function EmptyState({ title, description }) {
   );
 }
 
-const projectPoolColumns = ['姓名', '来源', '匹配分', '当前阶段'];
-const projectPoolColumnTemplate = 'minmax(82px, 1.28fr) minmax(88px, 1.1fr) minmax(42px, 0.48fr) minmax(64px, 0.78fr)';
+const projectPoolColumns = ['姓名', '院校', '匹配分', '当前阶段'];
+const projectPoolColumnTemplate = 'minmax(72px, 0.94fr) minmax(104px, 1.42fr) minmax(42px, 0.44fr) minmax(64px, 0.78fr)';
 const poolFilterOptions = ['全部', '待筛选', '待面邀', '待面评', 'Offer跟进'];
 
 const stageMeta = {
@@ -760,6 +760,29 @@ function candidateSchoolBackground(candidate) {
     candidate?.school || applicationField(candidate, ['学校', '院校', '毕业院校', 'School']) || candidate?.screening?.school,
     candidate?.major || applicationField(candidate, ['专业', 'Major']) || candidate?.screening?.major
   ]).join(' · ');
+}
+
+function candidateSchoolParts(candidate) {
+  const fallback = '院校待补充';
+  const full = cleanFieldValue(candidateSchoolBackground(candidate)) || fallback;
+  const degree = candidateDegree(candidate);
+  const pieces = full
+    .split(/\s*[·｜|]\s*/)
+    .map(cleanFieldValue)
+    .filter(Boolean);
+  const main = pieces[0] || full;
+  const secondary = pieces.slice(1).join(' · ') || degree || '';
+  return { full, main, secondary };
+}
+
+function CandidateSchoolCell({ candidate }) {
+  const school = candidateSchoolParts(candidate);
+  return (
+    <span className="school-cell" title={school.full}>
+      <span className="school-cell-main">{school.main}</span>
+      {school.secondary ? <span className="school-cell-sub">{school.secondary}</span> : null}
+    </span>
+  );
 }
 
 function formatFileSize(value) {
@@ -1338,7 +1361,7 @@ function filterCandidatesByPool(candidates, filter) {
 function candidatePoolCells(candidate) {
   return [
     candidate.name || candidateEmail(candidate) || candidate.id,
-    candidate.source || '新设置的来源',
+    <CandidateSchoolCell candidate={candidate} />,
     candidate.screening?.score ?? '待筛',
     <ListStatusBadge value={candidatePoolStage(candidate)} />
   ];
@@ -3647,6 +3670,7 @@ function App() {
                         {candidatePoolCells(candidate).map((cell, index) => (
                           <span
                             key={`${candidate.id}-${projectPoolColumns[index]}`}
+                            className={index === 1 ? 'school-column-cell' : undefined}
                             data-label={projectPoolColumns[index]}
                           >
                             {index === 0 && poolFilter === '待面邀' ? (

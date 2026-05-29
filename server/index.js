@@ -772,6 +772,19 @@ async function assertAllowedResumeUpload(file) {
 
 function pickApplicationFields(fields = {}) {
   const allowed = [
+    '院校背景',
+    '教育背景',
+    '学校背景',
+    '学校',
+    '院校',
+    '毕业院校',
+    'School',
+    '专业',
+    'Major',
+    '学历',
+    '学位',
+    '最高学历',
+    'Degree',
     '面试时间',
     '预计入职时间',
     '实习时长',

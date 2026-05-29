@@ -1148,8 +1148,40 @@ pre {
   white-space: nowrap;
 }
 
+.stage-row .school-column-cell {
+  white-space: normal;
+}
+
 .stage-row strong {
   color: #202a33;
+}
+
+.school-cell {
+  display: grid;
+  gap: 2px;
+  line-height: 1.18;
+  min-width: 0;
+  width: 100%;
+}
+
+.school-cell-main,
+.school-cell-sub {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.school-cell-main {
+  color: #253442;
+  font-weight: 700;
+}
+
+.school-cell-sub {
+  color: #708090;
+  font-size: 11px;
 }
 
 .name-cell {
@@ -3165,6 +3197,18 @@ pre {
   .candidate-pane[data-view="workbench"] .stage-row span:nth-child(2) {
     grid-column: 1;
     grid-row: 2;
+  }
+
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(2) .school-cell {
+    max-width: min(210px, 100%);
+  }
+
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(2) .school-cell-main {
+    font-size: 12px;
+  }
+
+  .candidate-pane[data-view="workbench"] .stage-row span:nth-child(2) .school-cell-sub {
+    display: none;
   }
 
   .candidate-pane[data-view="workbench"] .stage-row span:nth-child(3) {
